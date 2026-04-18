@@ -1,0 +1,34 @@
+# User configuration — contains tenant ID and personal paths
+Config/config.json
+
+# Downloaded Microsoft binary — fetched by Setup-Win32Forge.ps1
+Tools/IntuneWinAppUtil.exe
+Tools/*.exe
+
+# Generated app documentation — contains app-specific data
+Docs/*.md
+Docs/*.html
+
+# Tool logo — add your own Assets/logo.png locally
+Assets/logo.png
+Assets/*.png
+Assets/*.jpg
+Assets/*.jpeg
+!Assets/.gitkeep
+
+# Packaged .intunewin files
+*.intunewin
+
+# Verbose log output
+*.log
+Logs/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# VS Code
+.vscode/
+
+# PowerShell temp files
+*.ps1xml.bak

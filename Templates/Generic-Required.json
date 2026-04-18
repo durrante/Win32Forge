@@ -1,0 +1,31 @@
+{
+  "TemplateName": "Generic-Required",
+  "Description": "Standard Win32 app deployed as Required to All Devices. Install and uninstall commands must be set per application.",
+  "InternalNote": "Win32 EXE/MSI deployment — no PSADT wrapper. Edit InstallCommandLine and UninstallCommandLine before uploading.",
+  "IsPSADT": false,
+
+  "InstallCommandLine": "",
+  "UninstallCommandLine": "",
+
+  "InstallExperience": "system",
+  "RestartBehavior": "suppress",
+
+  "Architecture": "x64",
+  "MinimumSupportedWindowsRelease": "W10_2004",
+
+  "MaximumInstallationTimeInMinutes": 60,
+  "AllowAvailableUninstall": false,
+
+  "ReturnCodes": [
+    { "ReturnCode": 0,    "Type": "success"    },
+    { "ReturnCode": 3010, "Type": "softReboot" },
+    { "ReturnCode": 1641, "Type": "hardReboot" },
+    { "ReturnCode": 1618, "Type": "retry"      }
+  ],
+
+  "Assignment": {
+    "Type": "AllDevices",
+    "Intent": "required",
+    "Notification": "showAll"
+  }
+}

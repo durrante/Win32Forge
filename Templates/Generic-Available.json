@@ -1,0 +1,31 @@
+{
+  "TemplateName": "Generic-Available",
+  "Description": "Standard Win32 app published as Available in Company Portal for All Users. Users can install on demand.",
+  "InternalNote": "Win32 EXE/MSI deployment — no PSADT wrapper. Edit InstallCommandLine and UninstallCommandLine before uploading.",
+  "IsPSADT": false,
+
+  "InstallCommandLine": "",
+  "UninstallCommandLine": "",
+
+  "InstallExperience": "system",
+  "RestartBehavior": "suppress",
+
+  "Architecture": "x64",
+  "MinimumSupportedWindowsRelease": "W10_2004",
+
+  "MaximumInstallationTimeInMinutes": 60,
+  "AllowAvailableUninstall": true,
+
+  "ReturnCodes": [
+    { "ReturnCode": 0,    "Type": "success"    },
+    { "ReturnCode": 3010, "Type": "softReboot" },
+    { "ReturnCode": 1641, "Type": "hardReboot" },
+    { "ReturnCode": 1618, "Type": "retry"      }
+  ],
+
+  "Assignment": {
+    "Type": "AllUsers",
+    "Intent": "available",
+    "Notification": "showAll"
+  }
+}

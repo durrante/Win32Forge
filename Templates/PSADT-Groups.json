@@ -1,0 +1,41 @@
+{
+  "TemplateName": "PSADT-Groups",
+  "Description": "PSADT v4 application deployed as Required to specific Azure AD groups. Replace the placeholder group names and IDs with your own.",
+  "InternalNote": "Uses PSAppDeployToolkit v4. Replace GroupName and GroupID values before use. FilterID/FilterName can be left empty if no Intune filter is needed.",
+  "IsPSADT": true,
+
+  "InstallCommandLine": "Invoke-AppDeployToolkit.exe -DeployMode Silent",
+  "UninstallCommandLine": "Invoke-AppDeployToolkit.exe -DeploymentType Uninstall -DeployMode Silent",
+
+  "InstallExperience": "system",
+  "RestartBehavior": "suppress",
+
+  "Architecture": "x64",
+  "MinimumSupportedWindowsRelease": "W10_2004",
+
+  "MaximumInstallationTimeInMinutes": 60,
+  "AllowAvailableUninstall": false,
+
+  "ReturnCodes": [
+    { "ReturnCode": 0,    "Type": "success"    },
+    { "ReturnCode": 1707, "Type": "success"    },
+    { "ReturnCode": 3010, "Type": "softReboot" },
+    { "ReturnCode": 1641, "Type": "hardReboot" },
+    { "ReturnCode": 1618, "Type": "retry"      }
+  ],
+
+  "Assignment": {
+    "Type": "Group",
+    "Groups": [
+      {
+        "GroupName": "YOUR-GROUP-NAME",
+        "GroupID": "YOUR-GROUP-OBJECT-ID",
+        "Intent": "required",
+        "Notification": "showAll",
+        "FilterName": "",
+        "FilterID": "",
+        "FilterIntent": "include"
+      }
+    ]
+  }
+}
