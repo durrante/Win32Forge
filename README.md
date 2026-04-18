@@ -90,8 +90,14 @@ Uses the Microsoft Graph Command Line Tools public client application. No app re
 
 **CustomApp**  
 Uses your own Entra ID app registration. Requires the following delegated permissions:
-- `DeviceManagementApps.ReadWrite.All`
-- `Group.Read.All` (for group-based assignments)
+
+| Permission | Purpose |
+| --- | --- |
+| `DeviceManagementApps.ReadWrite.All` | Upload and assign Win32 apps |
+| `DeviceManagementConfiguration.Read.All` | Load Intune assignment filters |
+| `Group.Read.All` | Search and resolve Azure AD groups for assignments |
+
+> `DeviceManagementConfiguration.Read.All` is optional — filters simply won't load if it's missing, but everything else will work.
 
 ---
 
