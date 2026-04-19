@@ -197,8 +197,6 @@ Source folders must be a valid PSAppDeployToolkit v4 structure with `Invoke-AppD
 Win32Forge\
 ├── Invoke-Win32Forge.ps1       # Main entry point — launch this
 ├── Setup-Win32Forge.ps1        # One-time setup script
-├── Assets\
-│   └── logo.png                # Tool logo (add your own — not included in repo)
 ├── Config\
 │   ├── config.example.json     # Example configuration — copy to config.json
 │   └── config.json             # Your configuration (not in repo — created by setup)
