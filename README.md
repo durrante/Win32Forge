@@ -28,9 +28,18 @@ Upload one app at a time through a guided, tabbed form covering:
 - **Assignment** — All Devices, All Users, specific Azure AD group(s) with per-group intent and notification, or no assignment. Intune assignment filters (loaded from your tenant) can be applied to any assignment type
 - **Logo** — attach a PNG or JPG app icon for the Company Portal tile
 
+When you select a source folder, Win32Forge automatically scans it and pre-fills two fields if it finds them:
+
+- **Detection script** — any `.ps1` file with "detection" in its name, anywhere in the folder tree, is auto-set as the PowerShell detection script (only if no detection method has been set yet)
+- **Logo** — the first PNG, JPG, or JPEG found in the **root** of the source folder is auto-set as the app logo (only if no logo has been set yet)
+
+A confirmation prompt is shown each time so you can review or override before uploading.
+
 ### Template system
 
-Templates are JSON files in the `Templates\` folder. They define the deployment defaults for an app — install commands, assignment type, return codes, architecture, restart behaviour, and more. Select a template per app in both the single upload form and the bulk manager. You can create and edit templates directly within Win32Forge using the built-in **Template Editor** — no manual JSON editing required.
+Templates are JSON files in the `Templates\` folder. They define the deployment defaults for an app — install commands, assignment type, return codes, architecture, restart behaviour, and more. Select a template per app in both the single upload form and the bulk manager, and override it on a per-app basis as needed.
+
+Templates are created and edited using the built-in **Template Editor** (the Templates button in the main window) — no manual JSON editing required. The templates included in this repo are examples to get you started; you are expected to build your own to match your environment.
 
 ### PSADT v4 support
 
@@ -38,11 +47,15 @@ When a template has `IsPSADT` enabled, Win32Forge scans the source folder for `I
 
 ### Bulk upload manager
 
-The bulk manager is a full app catalogue editor. Each row in the grid represents one app and exposes the same fields as the single upload form — source folder, template, display name, version, publisher, setup file, install/uninstall commands, description, information URL, privacy URL, logo, detection method, and assignment. Templates reduce the number of fields you need to fill per row. Additional features:
+The bulk manager is a full app catalogue editor. Each row in the grid represents one app and exposes the same fields available in the single upload form — source folder, template, display name, version, publisher, setup file, install/uninstall commands, description, information URL, privacy URL, logo, detection method, and assignment. Using templates reduces the number of fields you need to fill per row; the template can be changed per row independently of the global default.
+
+The same auto-detection applies here too: when a source folder is set, Win32Forge scans for a detection script and logo and pre-fills them if found.
+
+Additional features:
 
 - **Scan a folder** to auto-discover multiple app packages at once
-- **Edit any row** in the full single-app form for detailed configuration
-- **Import/export** the entire queue as JSON
+- **Edit any row** in the full single-app form for detailed detection and assignment configuration
+- **Import/export** the entire queue as JSON for repeatable deployments
 - **Right-click context menu** for per-row actions (edit, delete, upload now)
 - Uploads run sequentially with live status per row — errors are captured and displayed without stopping the rest of the queue
 
@@ -52,7 +65,7 @@ After every successful upload, Win32Forge writes a Markdown document to your con
 
 ### In-app settings
 
-All configuration — tenant ID, auth method, paths, default template, and verbose logging — is managed through a Settings window inside Win32Forge. IntuneWinAppUtil.exe can also be re-downloaded from the Settings window if needed.
+All configuration is managed through the **Settings** button in the main Win32Forge window — no need to edit `config.json` by hand. You can update your tenant ID, auth method, output and docs paths, default template, and verbose logging. The default template set here is used for all new uploads but can still be overridden per app in the single upload form, or per row in the bulk manager. IntuneWinAppUtil.exe can also be re-downloaded directly from the Settings window.
 
 ### Verbose logging
 
