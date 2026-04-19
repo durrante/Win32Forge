@@ -25,7 +25,7 @@ Win32Forge reads its configuration from `Config\config.json`. This file is creat
 | Field | Type | Description |
 | --- | --- | --- |
 | `AuthMethod` | string | `MicrosoftGraphCLI` or `CustomApp` — see [[Authentication]] |
-| `TenantID` | string | Your Entra ID (Azure AD) tenant ID |
+| `TenantID` | string | Your Entra ID tenant ID |
 | `ClientID` | string | Leave as default for Graph CLI; replace with your app registration client ID for CustomApp |
 | `DefaultOutputPath` | string | Folder where `.intunewin` packages are saved after packaging |
 | `DocumentationPath` | string | Folder where generated Markdown app docs are written |
@@ -45,13 +45,15 @@ You can edit config values at any time through the **Settings** button in the ma
 ## Verbose logging
 
 When `VerboseLogging` is `true`, Win32Forge appends structured entries to `LogPath` for:
+
 - App packaging (IntuneWinAppUtil arguments, exit codes, output)
 - Graph API calls (method, URL, auth method used)
 - App upload (name, version, detection type, assignment)
 - Errors with stack traces
 
 Log entries use the format:
-```
+
+```text
 [2026-04-18 14:32:01] [INFO ] [Invoke-ProcessApp] Starting: 7-Zip 24.09
 [2026-04-18 14:32:03] [DEBUG] [Invoke-TenantGraphRequest] Graph POST https://graph.microsoft.com/...
 [2026-04-18 14:32:08] [INFO ] [Add-IntuneApplication] Upload complete: App ID = xxxxxxxx

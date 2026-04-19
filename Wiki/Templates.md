@@ -12,7 +12,7 @@ The templates below are included as **examples only** to give you a starting poi
 | --- | --- | --- | --- |
 | `PSADT-Required` | All Devices | Required | Yes |
 | `PSADT-Available` | All Users | Available | Yes |
-| `PSADT-Groups` | Specific Azure AD group | Required | Yes |
+| `PSADT-Groups` | Specific Entra ID group | Required | Yes |
 | `Generic-Required` | All Devices | Required | No |
 | `Generic-Available` | All Users | Available | No |
 
@@ -89,7 +89,7 @@ The templates below are included as **examples only** to give you a starting poi
 | `Intent` | `required` / `available` / `uninstall` |
 | `Notification` | `showAll` / `showReboot` / `hideAll` |
 
-### Assignment — Azure AD group
+### Assignment — Entra ID group
 
 ```json
 "Assignment": {
@@ -108,7 +108,7 @@ The templates below are included as **examples only** to give you a starting poi
 }
 ```
 
-Replace `GroupName` and `GroupID` with your Azure AD group details. Multiple groups can be added to the `Groups` array.
+Replace `GroupName` and `GroupID` with your Entra ID group details. Multiple groups can be added to the `Groups` array.
 
 Leave `FilterName` and `FilterID` empty if you are not using an Intune assignment filter. Set `FilterIntent` to `include` or `exclude`.
 
@@ -129,6 +129,7 @@ If you prefer to edit JSON directly, templates are plain `.json` files in the `T
 The default template is set in the **Settings** window (the Settings button in the main Win32Forge window). It applies to all new uploads unless overridden.
 
 The default can be overridden:
+
 - **Per app** — change the template in the single upload form before uploading
 - **Per row** — change the template in the bulk manager grid, row by row
 

@@ -9,15 +9,18 @@ Win32Forge supports two authentication methods. Choose one during setup — it c
 Uses the **Microsoft Graph Command Line Tools** public client application — a multi-tenant app registered by Microsoft that allows delegated access without you needing your own app registration.
 
 **Pros:**
+
 - No app registration required
 - Fastest to set up
 - Works for most organisations
 
 **Cons:**
+
 - Requires interactive browser login each session (no background/unattended support)
 - Uses Microsoft's shared public client ID
 
 **Config:**
+
 ```json
 "AuthMethod": "MicrosoftGraphCLI",
 "ClientID": "14d82eec-204b-4c2f-b7e8-296a70dab67e"
@@ -37,7 +40,7 @@ Uses your own **Entra ID app registration**. Useful if your organisation restric
 | --- | --- |
 | `DeviceManagementApps.ReadWrite.All` | Upload and assign Win32 apps |
 | `DeviceManagementConfiguration.Read.All` | Load Intune assignment filters |
-| `Group.Read.All` | Search and resolve Azure AD groups for assignments |
+| `Group.Read.All` | Search and resolve Entra ID groups for assignments |
 
 > `DeviceManagementConfiguration.Read.All` is optional — if missing, Intune filters will not load, but all other features work normally.
 
@@ -54,6 +57,7 @@ Uses your own **Entra ID app registration**. Useful if your organisation restric
 9. Copy the **Application (client) ID** — paste this as `ClientID` in your config
 
 **Config:**
+
 ```json
 "AuthMethod": "CustomApp",
 "ClientID": "your-app-registration-client-id-here"
