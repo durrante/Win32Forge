@@ -52,7 +52,7 @@ Click **Load JSON** to import a previously saved queue. This is useful for repea
 Whenever a source folder is selected or scanned, Win32Forge automatically looks for two things:
 
 **Detection script**
-Scans the entire folder tree (recursively) for any `.ps1` file with "detection" in its name. If found and no detection method has already been set for the row, it is automatically set as the PowerShell detection script.
+Scans the root of the source folder for any `.ps1` file with "detection" in its name. If found and no detection method has already been set for the row, it is automatically set as the PowerShell detection script.
 
 **Logo**
 Scans only the root of the source folder for a PNG, JPG, or JPEG file. If found and no logo has been set, the first match is automatically used as the app logo.
