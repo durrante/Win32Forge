@@ -200,7 +200,7 @@ Win32Forge\
 ├── Config\
 │   ├── config.example.json     # Example configuration — copy to config.json
 │   └── config.json             # Your configuration (not in repo — created by setup)
-├── Docs\                       # Generated app documentation (not in repo)
+├── Docs\                       # Generated app documentation (examples in repo)
 ├── Private\                    # Internal PowerShell functions
 ├── Templates\                  # JSON deployment templates
 └── Tools\
