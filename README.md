@@ -128,7 +128,7 @@ pwsh .\Invoke-Win32Forge.ps1
 
 ## Configuration
 
-`Config\config.json` is created by `Setup-Win32Forge.ps1`. To configure manually, copy `Config\config.example.json` to `Config\config.json` and fill in your values.
+`Config\config.json` is created by `Setup-Win32Forge.ps1`. To configure manually, copy `Config\config.example.json` to `Config\config.json` and fill in your values. Altermatively, you can also use the 'settings' wizard within the main menu to update some of the configuration settings, such as paths, enable verbose logging, etc.
 
 | Field | Description |
 | --- | --- |
