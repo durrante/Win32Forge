@@ -6,8 +6,8 @@ Tools/IntuneWinAppUtil.exe
 Tools/*.exe
 
 # Generated app documentation — contains app-specific data
-Docs/*.md
-Docs/*.html
+# Add your own exclusions here if you don't want personal docs committed,
+# e.g. Docs/MyApp_*.md
 
 # Tool logo — add your own Assets/logo.png locally
 Assets/logo.png
