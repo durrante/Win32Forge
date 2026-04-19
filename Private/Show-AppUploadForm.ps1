@@ -1460,9 +1460,9 @@ function Show-AppUploadForm {
         $detScript = $null
         $logoFound  = $null
 
-        # Detection script: any .ps1 with "detection" in the name, anywhere in the tree
+        # Detection script: any .ps1 with "detection" in the name, root of source folder only
         if ($rdoDetectScript.IsChecked -and -not $txtDetectScript.Text) {
-            $detScript = Get-ChildItem -Path $Folder -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+            $detScript = Get-ChildItem -Path $Folder -Filter '*.ps1' -ErrorAction SilentlyContinue |
                          Where-Object { $_.Name -match 'detection' } |
                          Select-Object -First 1
         }

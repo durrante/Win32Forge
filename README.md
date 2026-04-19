@@ -30,7 +30,7 @@ Upload one app at a time through a guided, tabbed form covering:
 
 When you select a source folder, Win32Forge automatically scans it and pre-fills two fields if it finds them:
 
-- **Detection script** — any `.ps1` file with "detection" in its name, anywhere in the folder tree, is auto-set as the PowerShell detection script (only if no detection method has been set yet)
+- **Detection script** — any `.ps1` file with "detection" in its name in the **root** of the source folder is auto-set as the PowerShell detection script (only if no detection method has been set yet)
 - **Logo** — the first PNG, JPG, or JPEG found in the **root** of the source folder is auto-set as the app logo (only if no logo has been set yet)
 
 A confirmation prompt is shown each time so you can review or override before uploading.

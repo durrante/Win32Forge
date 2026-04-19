@@ -821,7 +821,7 @@ function Show-BulkManager {
         $logoFound  = $null
 
         if (-not $row.Detection) {
-            $detScript = Get-ChildItem -Path $Path -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+            $detScript = Get-ChildItem -Path $Path -Filter '*.ps1' -ErrorAction SilentlyContinue |
                          Where-Object { $_.Name -match 'detection' } |
                          Select-Object -First 1
         }
