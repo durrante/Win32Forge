@@ -6,6 +6,8 @@ Templates are JSON files in the `Templates\` folder that define how an app is de
 
 ## Included templates
 
+The templates below are included as **examples only** to give you a starting point. They are not intended to be used as-is in production — build your own using the Template Editor to match your environment, naming convention, and assignment strategy.
+
 | Template | Assignment | Intent | PSADT |
 | --- | --- | --- | --- |
 | `PSADT-Required` | All Devices | Required | Yes |
@@ -114,19 +116,20 @@ Leave `FilterName` and `FilterID` empty if you are not using an Intune assignmen
 
 ## Creating a custom template
 
-1. Copy one of the existing templates in `Templates\` as a starting point
-2. Edit the JSON fields as needed
-3. Save with a descriptive name, e.g. `PSADT-Required-Servers.json`
-4. The new template appears in the template picker immediately — no restart needed
+Use the **Template Editor** inside Win32Forge (the Templates button in the main window) to create and edit templates without touching any JSON. Click **New**, fill in the form, and click **Save Template**. The new template appears in all template pickers immediately — no restart needed.
+
+You can also duplicate an existing template as a starting point using the **Duplicate** button in the Template Editor.
+
+If you prefer to edit JSON directly, templates are plain `.json` files in the `Templates\` folder and can be opened in any text editor.
 
 ---
 
 ## Setting a default template
 
-Set `DefaultTemplate` in `Config\config.json` to the template filename without the `.json` extension:
+The default template is set in the **Settings** window (the Settings button in the main Win32Forge window). It applies to all new uploads unless overridden.
 
-```json
-"DefaultTemplate": "PSADT-Required"
-```
+The default can be overridden:
+- **Per app** — change the template in the single upload form before uploading
+- **Per row** — change the template in the bulk manager grid, row by row
 
-This template is pre-selected for every new upload. You can override it per-app in the upload form or bulk manager.
+You can also set `DefaultTemplate` directly in `Config\config.json` (filename without `.json`), but the Settings window is the recommended way.
