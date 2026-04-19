@@ -1,6 +1,6 @@
 # Win32Forge
 
-**Upload, Automate & Document Win32 Apps in Intune**
+Upload, Automate & Document Win32 Apps in Intune
 
 Win32Forge is a free, open source PowerShell 7 GUI tool for packaging, uploading, and documenting Win32 applications in Microsoft Intune. It is built around a JSON template system and has deep support for [PSAppDeployToolkit (PSADT) v4](https://psappdeploytoolkit.com/), removing the repetitive manual work from Intune app management.
 
@@ -25,7 +25,7 @@ Upload one app at a time through a guided, tabbed form covering:
 - **Commands** — install and uninstall command lines, install context (system or user), device restart behaviour
 - **Detection method** — choose from PowerShell script, registry key, MSI product code, or file/folder existence/version checks
 - **Requirement rules** — target architecture (x64, x86, ARM64, or any combination), minimum Windows version, and optional additional requirement rules (script, registry, or file based)
-- **Assignment** — All Devices, All Users, specific Azure AD group(s) with per-group intent and notification, or no assignment. Intune assignment filters (loaded from your tenant) can be applied to any assignment type
+- **Assignment** — All Devices, All Users, specific Entra ID group(s) with per-group intent and notification, or no assignment. Intune assignment filters (loaded from your tenant) can be applied to any assignment type
 - **Logo** — attach a PNG or JPG app icon for the Company Portal tile
 
 When you select a source folder, Win32Forge automatically scans it and pre-fills two fields if it finds them:
@@ -62,6 +62,8 @@ Additional features:
 ### Automatic documentation
 
 After every successful upload, Win32Forge writes a Markdown document to your configured docs folder containing: app metadata, packaging details, install/uninstall commands, detection method (including script content if applicable), requirement rules, assignment details with filter information, return codes, the Intune app ID, and a direct link to the app in the Intune portal.
+
+Example documentation files are included in the `Docs\` folder so you can see what the output looks like before uploading your first app.
 
 ### In-app settings
 
@@ -152,7 +154,7 @@ Uses your own Entra ID app registration. Required delegated permissions:
 | --- | --- |
 | `DeviceManagementApps.ReadWrite.All` | Upload and assign Win32 apps |
 | `DeviceManagementConfiguration.Read.All` | Load Intune assignment filters (optional — filters won't load if missing) |
-| `Group.Read.All` | Search and resolve Azure AD groups for assignments |
+| `Group.Read.All` | Search and resolve Entra ID groups for assignments |
 
 ---
 
@@ -166,7 +168,7 @@ Templates live in `Templates\` as JSON files and define the deployment defaults 
 | --- | --- | --- | --- |
 | `PSADT-Required` | All Devices | Required | Yes |
 | `PSADT-Available` | All Users | Available | Yes |
-| `PSADT-Groups` | Specific Azure AD group (placeholder — edit before use) | Required | Yes |
+| `PSADT-Groups` | Specific Entra ID group (placeholder — edit before use) | Required | Yes |
 | `Generic-Required` | All Devices | Required | No |
 | `Generic-Available` | All Users | Available | No |
 
@@ -191,7 +193,7 @@ Source folders must be a valid PSAppDeployToolkit v4 structure with `Invoke-AppD
 
 ## Folder Structure
 
-```
+```text
 Win32Forge\
 ├── Invoke-Win32Forge.ps1       # Main entry point — launch this
 ├── Setup-Win32Forge.ps1        # One-time setup script
