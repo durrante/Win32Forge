@@ -9,12 +9,8 @@ Tools/*.exe
 # Add your own exclusions here if you don't want personal docs committed,
 # e.g. Docs/MyApp_*.md
 
-# Tool logo — add your own Assets/logo.png locally
-Assets/logo.png
-Assets/*.png
-Assets/*.jpg
-Assets/*.jpeg
-!Assets/.gitkeep
+# Local Claude context file — not for committing
+CLAUDE.md
 
 # Packaged .intunewin files
 *.intunewin
