@@ -791,6 +791,8 @@ function Show-TemplateEditor {
 
         try {
             $t = Get-Content $path -Raw | ConvertFrom-Json
+            if ($t -is [array]) { $t = $t | Where-Object { $_ -is [PSCustomObject] } | Select-Object -First 1 }
+            if (-not $t) { return }
 
             $txtTplName.Text  = $t.TemplateName ?? $Name
             $txtTplDesc.Text  = $t.Description  ?? ''
@@ -973,7 +975,7 @@ function Show-TemplateEditor {
         if ($timeoutVal -le 0) { $timeoutVal = 60 }
 
         # Commit any in-progress DataGrid cell edit before reading
-        $dgTplGroups.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Row, $true)
+        $null = $dgTplGroups.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Row, $true)
 
         # Build assignment — per-group settings for Group type, global for others
         $assignmentBlock = if ($asgType -eq 'Group') {

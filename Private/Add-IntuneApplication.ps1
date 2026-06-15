@@ -151,14 +151,52 @@ function Add-IntuneApplication {
                             Write-Warning "Requirement script not found, skipping: $($rule.ScriptPath)"
                             continue
                         }
-                        New-IntuneWin32AppRequirementRuleScript `
-                            -ScriptFile            $rule.ScriptPath `
-                            -OutputDataType        $rule.OutputDataType `
-                            -Operator              $rule.Operator `
-                            -Value                 $rule.Value `
-                            -RunAs32Bit            ([bool]$rule.RunAs32Bit) `
-                            -EnforceSignatureCheck ([bool]$rule.EnforceSignatureCheck) `
-                            -RunAsAccount          'system'
+                        $ctx      = $rule.ScriptContext ?? 'system'
+                        $run32    = [bool]($rule.RunAs32BitOn64System ?? $rule.RunAs32Bit ?? $false)
+                        $enfSig   = [bool]($rule.EnforceSignatureCheck ?? $false)
+                        $dataType = ($rule.OutputDataType ?? 'string').ToLower()
+                        $op       = $rule.Operator ?? 'equal'
+                        $val      = $rule.Value    ?? ''
+
+                        $p = @{
+                            ScriptFile            = $rule.ScriptPath
+                            ScriptContext         = $ctx
+                            RunAs32BitOn64System  = $run32
+                            EnforceSignatureCheck = $enfSig
+                        }
+                        switch ($dataType) {
+                            'boolean' {
+                                $p.BooleanOutputDataType     = $true
+                                $p.BooleanComparisonOperator = if ($op -in @('equal','notEqual')) { $op } else { 'equal' }
+                                $p.BooleanValue              = if ($val -in @('True','False')) { $val } else { 'True' }
+                            }
+                            'integer' {
+                                $p.IntegerOutputDataType     = $true
+                                $p.IntegerComparisonOperator = $op
+                                $p.IntegerValue              = [string][int]$val
+                            }
+                            'float' {
+                                $p.FloatOutputDataType       = $true
+                                $p.FloatComparisonOperator   = $op
+                                $p.FloatValue                = $val
+                            }
+                            'version' {
+                                $p.VersionOutputDataType     = $true
+                                $p.VersionComparisonOperator = $op
+                                $p.VersionValue              = $val
+                            }
+                            'datetime' {
+                                $p.DateTimeOutputDataType     = $true
+                                $p.DateTimeComparisonOperator = $op
+                                $p.DateTimeValue              = [datetime]$val
+                            }
+                            default {
+                                $p.StringOutputDataType      = $true
+                                $p.StringComparisonOperator  = if ($op -in @('equal','notEqual')) { $op } else { 'equal' }
+                                $p.StringValue               = $val
+                            }
+                        }
+                        New-IntuneWin32AppRequirementRuleScript @p
                     }
                     'Registry' {
                         # Module uses parameter-set switches, not a DetectionType string

@@ -597,17 +597,43 @@ function Show-AppUploadForm {
                       <ComboBoxItem Content="lessThanOrEqual"/>
                     </ComboBox>
                   </Grid>
+                  <!-- Value row: TextBox / boolean ComboBox / date+time picker depending on output type -->
                   <Grid Style="{StaticResource FieldRow}">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="130"/>
                       <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Label Content="Expected value" Grid.Column="0"/>
-                    <TextBox x:Name="TxtAddReqScriptValue" Grid.Column="1"/>
+                    <Label Content="Value" Grid.Column="0"/>
+                    <TextBox  x:Name="TxtAddReqScriptValue"     Grid.Column="1"/>
+                    <ComboBox x:Name="CmbAddReqScriptBoolValue" Grid.Column="1" Visibility="Collapsed" SelectedIndex="0">
+                      <ComboBoxItem Content="True"/>
+                      <ComboBoxItem Content="False"/>
+                    </ComboBox>
+                    <StackPanel x:Name="PnlAddReqScriptDateTime" Grid.Column="1"
+                                Orientation="Horizontal" Visibility="Collapsed">
+                      <DatePicker x:Name="DtpAddReqScriptDate" Width="145"
+                                  ToolTip="Select the date"/>
+                      <TextBox    x:Name="TxtAddReqScriptTime"  Width="80" Margin="8,0,0,0"
+                                  Padding="4,3" Text="00:00:00"
+                                  ToolTip="Time in hh:mm:ss (24-hour) format"/>
+                    </StackPanel>
+                  </Grid>
+                  <!-- Run as account (ScriptContext: system = machine context, user = logged-on user) -->
+                  <Grid Style="{StaticResource FieldRow}">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="130"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Content="Run as account" Grid.Column="0"
+                           ToolTip="system = machine context (no logged-on user required); user = runs as the logged-on user"/>
+                    <ComboBox x:Name="CmbAddReqScriptContext" Grid.Column="1" SelectedIndex="0" MinWidth="120">
+                      <ComboBoxItem Content="system"/>
+                      <ComboBoxItem Content="user"/>
+                    </ComboBox>
                   </Grid>
                   <StackPanel Orientation="Horizontal" Margin="130,4,0,0">
-                    <CheckBox x:Name="ChkAddReqSignature" Content="Enforce signature check" Margin="0,0,16,0"/>
-                    <CheckBox x:Name="ChkAddReq32Bit"     Content="Run as 32-bit"/>
+                    <CheckBox x:Name="ChkAddReqSignature" Content="Enforce signature check"          Margin="0,0,16,0"/>
+                    <CheckBox x:Name="ChkAddReq32Bit"     Content="Run as 32-bit on 64-bit system"/>
                   </StackPanel>
                 </StackPanel>
 
@@ -1034,8 +1060,13 @@ function Show-AppUploadForm {
     $cmbAddReqOutputType = Find 'CmbAddReqOutputType'
     $cmbAddReqScriptOp   = Find 'CmbAddReqScriptOp'
     $txtAddReqScriptValue = Find 'TxtAddReqScriptValue'
-    $chkAddReqSignature  = Find 'ChkAddReqSignature'
-    $chkAddReq32Bit      = Find 'ChkAddReq32Bit'
+    $chkAddReqSignature       = Find 'ChkAddReqSignature'
+    $chkAddReq32Bit           = Find 'ChkAddReq32Bit'
+    $cmbAddReqScriptContext   = Find 'CmbAddReqScriptContext'
+    $cmbAddReqScriptBoolValue = Find 'CmbAddReqScriptBoolValue'
+    $pnlAddReqScriptDateTime  = Find 'PnlAddReqScriptDateTime'
+    $dtpAddReqScriptDate      = Find 'DtpAddReqScriptDate'
+    $txtAddReqScriptTime      = Find 'TxtAddReqScriptTime'
     $txtAddReqRegKey     = Find 'TxtAddReqRegKey'
     $txtAddReqRegValName = Find 'TxtAddReqRegValName'
     $cmbAddReqRegType    = Find 'CmbAddReqRegType'
@@ -1663,6 +1694,19 @@ function Show-AppUploadForm {
         if ($f) { $txtAddReqScript.Text = $f }
     })
 
+    $cmbAddReqOutputType.Add_SelectionChanged({
+        $type       = $cmbAddReqOutputType.SelectedItem.Content
+        $isBool     = ($type -eq 'boolean')
+        $isDateTime = ($type -eq 'dateTime')
+        $txtAddReqScriptValue.Visibility        = if ($isBool -or $isDateTime) { 'Collapsed' } else { 'Visible' }
+        $cmbAddReqScriptBoolValue.Visibility    = if ($isBool)                 { 'Visible'   } else { 'Collapsed' }
+        $pnlAddReqScriptDateTime.Visibility     = if ($isDateTime)             { 'Visible'   } else { 'Collapsed' }
+        # Boolean only supports equal / notEqual — reset if an inapplicable operator is selected
+        if ($isBool -and $cmbAddReqScriptOp.SelectedItem.Content -notin @('equal','notEqual')) {
+            $cmbAddReqScriptOp.SelectedIndex = 0
+        }
+    })
+
     $btnReqAddConfirm.Add_Click({
         $rule = $null
         if ($rdoReqTypeScript.IsChecked) {
@@ -1670,14 +1714,26 @@ function Show-AppUploadForm {
                 [System.Windows.MessageBox]::Show('Please select a script file.', 'Validation', 'OK', 'Warning')
                 return
             }
+            $outType = $cmbAddReqOutputType.SelectedItem.Content
+            $isBool  = ($outType -eq 'boolean')
             $rule = @{
-                Type                 = 'Script'
-                ScriptPath           = $txtAddReqScript.Text
-                OutputDataType       = $cmbAddReqOutputType.SelectedItem.Content
-                Operator             = $cmbAddReqScriptOp.SelectedItem.Content
-                Value                = $txtAddReqScriptValue.Text
+                Type                  = 'Script'
+                ScriptPath            = $txtAddReqScript.Text
+                OutputDataType        = $outType
+                Operator              = $cmbAddReqScriptOp.SelectedItem.Content
+                Value                 = if ($isBool) {
+                                            $cmbAddReqScriptBoolValue.SelectedItem.Content
+                                        } elseif ($outType -eq 'dateTime') {
+                                            $d = if ($dtpAddReqScriptDate.SelectedDate) { $dtpAddReqScriptDate.SelectedDate.Value.ToString('yyyy-MM-dd') } else { (Get-Date).ToString('yyyy-MM-dd') }
+                                            $t = $txtAddReqScriptTime.Text.Trim()
+                                            if (-not $t -or $t -notmatch '^\d{1,2}:\d{2}(:\d{2})?$') { $t = '00:00:00' }
+                                            "$d $t"
+                                        } else {
+                                            $txtAddReqScriptValue.Text
+                                        }
+                ScriptContext         = $cmbAddReqScriptContext.SelectedItem.Content
                 EnforceSignatureCheck = [bool]$chkAddReqSignature.IsChecked
-                RunAs32Bit           = [bool]$chkAddReq32Bit.IsChecked
+                RunAs32BitOn64System  = [bool]$chkAddReq32Bit.IsChecked
             }
         }
         elseif ($rdoReqTypeRegistry.IsChecked) {
@@ -1717,6 +1773,14 @@ function Show-AppUploadForm {
 
             # Reset add-rule fields
             $txtAddReqScript.Text = ''; $txtAddReqScriptValue.Text = ''
+            $cmbAddReqOutputType.SelectedIndex      = 0
+            $cmbAddReqScriptBoolValue.SelectedIndex = 0
+            $cmbAddReqScriptContext.SelectedIndex   = 0
+            $txtAddReqScriptValue.Visibility        = 'Visible'
+            $cmbAddReqScriptBoolValue.Visibility    = 'Collapsed'
+            $pnlAddReqScriptDateTime.Visibility     = 'Collapsed'
+            $dtpAddReqScriptDate.SelectedDate       = $null
+            $txtAddReqScriptTime.Text               = '00:00:00'
             $txtAddReqRegKey.Text = ''; $txtAddReqRegValName.Text = ''; $txtAddReqRegValue.Text = ''
             $txtAddReqFilePath.Text = ''; $txtAddReqFileName.Text = ''; $txtAddReqFileValue.Text = ''
             $panelAddReqRule.Visibility = 'Collapsed'

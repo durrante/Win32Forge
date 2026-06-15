@@ -132,6 +132,7 @@ function Show-GroupPicker {
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto"/>
           <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" FontSize="11" Foreground="#555" Margin="0,0,0,4"
                    Text="Or add a group manually by Object ID (useful if not connected or group isn't returned by search):"/>
@@ -149,7 +150,7 @@ function Show-GroupPicker {
                    ToolTip="Group Object ID — found in Entra ID (Azure AD) → Groups → Properties → Object ID"/>
           <Button  x:Name="BtnAddManual" Grid.Column="3" Content="Add" Padding="12,4" Margin="8,0,0,0"/>
         </Grid>
-        <TextBlock x:Name="TxtManualHint" Margin="0,6,0,0" FontSize="10" Foreground="#999"
+        <TextBlock x:Name="TxtManualHint" Grid.Row="2" Margin="0,6,0,0" FontSize="10" Foreground="#999"
                    Text="Name column is for reference only · Object ID is the GUID used during upload"/>
       </Grid>
     </Border>
