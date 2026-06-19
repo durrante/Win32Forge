@@ -12,6 +12,8 @@
     - Tests authentication with delegated permissions (interactive browser login)
 
 .NOTES
+    Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  See CHANGELOG.md
+
     IMPORTANT: Must be run in PowerShell 7 (pwsh.exe), NOT Windows PowerShell 5.1
     (powershell.exe). Modules installed by PS7 go to the PS7 module path; modules
     installed by PS5.1 go to a separate path and will NOT be loaded when the tool runs.

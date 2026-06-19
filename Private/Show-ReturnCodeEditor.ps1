@@ -1,3 +1,4 @@
+# Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
 <#
 .SYNOPSIS
     WPF modal dialog for viewing and editing Intune Win32 app return codes.

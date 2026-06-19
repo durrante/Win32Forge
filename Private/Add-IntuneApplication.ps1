@@ -1,3 +1,4 @@
+# Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
 <#
 .SYNOPSIS
     Uploads a Win32 application to Intune and configures assignments.
@@ -366,10 +367,26 @@ function Add-IntuneApplication {
         $appParams.CategoryName = [string[]]$cats
     }
 
-    $intuneApp = Add-IntuneWin32App @appParams
+    # Add-IntuneWin32App reports all of its failures (bad request body, failed
+    # contentVersions/files resource, AzureStorageUriRequestFailed, etc.) via
+    # Write-Warning and then returns nothing — it never throws. Capture the warning
+    # stream so the real reason is logged instead of a generic "no App ID" message.
+    $moduleWarnings = @()
+    $intuneApp = Add-IntuneWin32App @appParams -WarningVariable +moduleWarnings
 
     if (-not $intuneApp -or -not $intuneApp.id) {
-        throw "Upload failed — no App ID returned from Intune"
+        $detail = ''
+        if ($moduleWarnings.Count -gt 0) {
+            foreach ($w in $moduleWarnings) {
+                Write-ToolLog "Add-IntuneWin32App: $($w.Message)" -Level WARN
+            }
+            # Surface the most informative warning (skip the body-dump JSON) in the thrown message
+            $meaningful = $moduleWarnings |
+                Where-Object { $_.Message -notmatch '^\s*[\{\[]' } |
+                Select-Object -ExpandProperty Message
+            if ($meaningful) { $detail = ' — ' + (($meaningful | Select-Object -Last 1)) }
+        }
+        throw "Upload failed — no App ID returned from Intune$detail"
     }
     Write-Host "  [OK] App uploaded: $($intuneApp.displayName)  (ID: $($intuneApp.id))" -ForegroundColor Green
     Write-ToolLog "App uploaded: '$($intuneApp.displayName)'  ID=$($intuneApp.id)"

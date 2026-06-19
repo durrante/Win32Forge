@@ -1,3 +1,4 @@
+# Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
 <#
 .SYNOPSIS
     WPF main dashboard window for the Intune Win32 App Uploader.
@@ -203,6 +204,9 @@ function Show-MainWindow {
 
     $reader = [System.Xml.XmlNodeReader]::new($xaml)
     $window = [System.Windows.Markup.XamlReader]::Load($reader)
+
+    # Surface the tool version (set by Invoke-Win32Forge.ps1) in the window title bar.
+    if ($global:Win32ForgeVersion) { $window.Title = "Win32Forge v$($global:Win32ForgeVersion)" }
 
     function Find { param($n) $window.FindName($n) }
 

@@ -80,6 +80,52 @@ See [[Configuration]] for full logging details.
 
 ---
 
+## Windows 11 24H2 (or 23H2) rejected as minimum OS
+
+**Symptom:** `Cannot validate argument on parameter 'MinimumSupportedWindowsRelease'`.
+
+**Status:** Fixed in 1.1.0. Win32Forge patches the installed IntuneWin32App module on launch to add `W11_23H2` and `W11_24H2`. If you still see this, fully close and re-launch Win32Forge so the patched module is reloaded.
+
+---
+
+## A category isn't applied / "ModelValidationFailure ... property named 'id'"
+
+**Cause:** The category name didn't resolve to a category that exists in your tenant. In earlier builds, category names containing a space (e.g. *Data management*) also failed to resolve and could fail the whole upload.
+
+**Status:** Fixed in 1.1.0 — category resolution is now done locally and reliably, and an unknown category is skipped with a warning rather than failing the upload. To apply a category, make sure its name **exactly matches** an existing Intune app category (Intune → Apps → Categories). Re-launch Win32Forge after upgrading so the module patch is active.
+
+---
+
+## Large app upload floods "SAS Uri renewal ... segment 'deviceAppManagement'" warnings
+
+**Cause:** A bug in the module's mid-upload SAS-token renewal that triggers on large packages.
+
+**Status:** Fixed in 1.1.0 (module patch applied on launch). If you see it, re-launch Win32Forge so the patch is active.
+
+---
+
+## Packaging fails: "Could not find a part of the path" on a deep folder
+
+**Cause:** `IntuneWinAppUtil.exe` is limited to 260-character paths (`MAX_PATH`). Deeply-nested packages on a long source path (e.g. under OneDrive) can exceed it.
+
+**Status:** Win32Forge 1.1.0 automatically retries packaging through a short directory junction, which resolves almost all cases. If a package is so deep that it *still* exceeds 260 chars from a short root, either enable Windows long-path support (`LongPathsEnabled`) or move the source closer to the drive root.
+
+---
+
+## Upload error mentions a date like "13/04/2026 was not recognized as a valid DateTime"
+
+**Cause:** A locale (e.g. en-GB) date-parsing bug in the module on non-US systems.
+
+**Status:** Fixed in 1.1.0 (module patch applied on launch).
+
+---
+
+## About the automatic module patches
+
+On every launch, Win32Forge applies small, idempotent compatibility patches to your locally-installed IntuneWin32App module (the four issues above). They are safe to re-run and don't modify the upstream gallery package. **After upgrading Win32Forge, fully re-launch it** so the patches are (re)applied and the module is reloaded.
+
+---
+
 ## Still stuck?
 
 Open an issue on [GitHub](https://github.com/durrante/Win32Forge/issues) and include:

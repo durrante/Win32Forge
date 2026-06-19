@@ -1,3 +1,4 @@
+# Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
 <#
 .SYNOPSIS
     Patches all installed IntuneWin32App module versions for compatibility fixes.
@@ -66,22 +67,25 @@ function Repair-IntuneWin32AppModule {
             }
             else {
                 $blobContent = Get-Content $blobFile -Raw
-                # Guard: already patched if sentinel variable present
-                if ($blobContent -match '_eo\b.*is \[System\.DateTimeOffset\]') {
+                # Guard: already patched if the Win32Forge sentinel assignment is present.
+                if ($blobContent -match '\$_eo\s*=\s*\$Global:AccessToken\.ExpiresOn') {
                     Write-Verbose 'Repair-IntuneWin32AppModule: Patch A already applied.'
                 }
                 else {
-                    $oldStr = @'
-        # Convert ExpiresOn to DateTimeOffset in UTC
-        $ExpiresOnUTC = [DateTimeOffset]::Parse(
-            $Global:AccessToken.ExpiresOn.ToString(),
-            [System.Globalization.CultureInfo]::InvariantCulture,
-            [System.Globalization.DateTimeStyles]::AssumeUniversal
-            ).ToUniversalTime()
-'@
+                    # Match the original block regardless of indentation or line-endings (CRLF vs LF).
+                    # NOTE: an earlier version used a literal here-string with .Replace(), which silently
+                    # no-op'd when the module file used CRLF and this script used LF (or vice versa) yet
+                    # still reported success. Use a whitespace-tolerant regex and only claim success if
+                    # the content actually changed.
+                    $patternA = '(?s)#\s*Convert ExpiresOn to DateTimeOffset in UTC\s*\r?\n\s*' +
+                                '\$ExpiresOnUTC\s*=\s*\[DateTimeOffset\]::Parse\(\s*' +
+                                '\$Global:AccessToken\.ExpiresOn\.ToString\(\)\s*,\s*' +
+                                '\[System\.Globalization\.CultureInfo\]::InvariantCulture\s*,\s*' +
+                                '\[System\.Globalization\.DateTimeStyles\]::AssumeUniversal\s*' +
+                                '\)\.ToUniversalTime\(\)'
                     $newStr = @'
         # Patch A (Win32Forge): avoid locale-specific ToString() + InvariantCulture Parse,
-        # which fails when day > 12 (e.g. en-GB '13/04/2026' parsed as month 13 = invalid).
+        # which fails when day > 12 (e.g. en-GB '18/06/2026' parsed as month 18 = invalid).
         # ExpiresOn is a DateTimeOffset — convert to UTC directly without string round-trip.
         $_eo = $Global:AccessToken.ExpiresOn
         $ExpiresOnUTC = if ($_eo -is [System.DateTimeOffset]) {
@@ -92,8 +96,10 @@ function Repair-IntuneWin32AppModule {
             [System.DateTimeOffset]::UtcNow.AddHours(1)
         }
 '@
-                    if ($blobContent -match [regex]::Escape('$Global:AccessToken.ExpiresOn.ToString()')) {
-                        $patchedContent = $blobContent.Replace($oldStr, $newStr)
+                    # Use a MatchEvaluator so '$' sequences in $newStr are treated literally,
+                    # not as regex replacement back-references.
+                    $patchedContent = [regex]::Replace($blobContent, $patternA, { param($m) $newStr })
+                    if ($patchedContent -ne $blobContent) {
                         try {
                             Set-Content -Path $blobFile -Value $patchedContent -Encoding UTF8 -Force
                             Write-Verbose "Repair-IntuneWin32AppModule: Patch A applied to $blobFile"
@@ -104,7 +110,7 @@ function Repair-IntuneWin32AppModule {
                         }
                     }
                     else {
-                        Write-Verbose 'Repair-IntuneWin32AppModule: target for Patch A not found in Invoke-AzureStorageBlobUpload.ps1 — skipping.'
+                        Write-Verbose 'Repair-IntuneWin32AppModule: target for Patch A not found in Invoke-AzureStorageBlobUpload.ps1 — skipping (format changed or already patched).'
                     }
                 }
             }
@@ -160,6 +166,152 @@ function Repair-IntuneWin32AppModule {
                     }
                     else {
                         Write-Verbose 'Repair-IntuneWin32AppModule: target for Patch B not found in Test-AccessToken.ps1 — skipping.'
+                    }
+                }
+            }
+
+            # ══════════════════════════════════════════════════════════════════
+            # Patch C — New-IntuneWin32AppRequirementRule.ps1 (1.4+/1.5+)
+            #   The shipped 1.5.0 ValidateSet for MinimumSupportedWindowsRelease
+            #   stops at W11_22H2, so selecting Windows 11 23H2 / 24H2 fails with
+            #   "Cannot validate argument on parameter 'MinimumSupportedWindowsRelease'".
+            #   Add the missing releases to the ValidateSet AND their API-value
+            #   mappings in $OperatingSystemTable. Matches MSEndpointMgr PR #219:
+            #     W11_23H2 -> Windows11_23H2 ,  W11_24H2 -> Windows11_24H2
+            # ══════════════════════════════════════════════════════════════════
+            $reqFileModern = Join-Path $moduleBase 'Public\New-IntuneWin32AppRequirementRule.ps1'
+            if (-not (Test-Path $reqFileModern)) {
+                Write-Verbose "Repair-IntuneWin32AppModule: $reqFileModern not found — skipping Patch C."
+            }
+            else {
+                $reqContentModern = Get-Content $reqFileModern -Raw
+                if ($reqContentModern -match 'W11_24H2') {
+                    Write-Verbose 'Repair-IntuneWin32AppModule: Patch C already applied (W11_24H2 present).'
+                }
+                else {
+                    $patchedReq = $reqContentModern
+
+                    # 1) Extend the ValidateSet. The ValidateSet entry for W11_22H2 is
+                    #    immediately followed by ")]" (closing the set + the attribute),
+                    #    which uniquely distinguishes it from the hashtable entry below.
+                    $patchedReq = $patchedReq -replace
+                        '"W11_22H2"(\s*)\)\]',
+                        '"W11_22H2", "W11_23H2", "W11_24H2"$1)]'
+
+                    # 2) Add the two API-value mappings after the W11_22H2 table entry,
+                    #    preserving the original line's indentation (captured as $1).
+                    $patchedReq = [regex]::Replace(
+                        $patchedReq,
+                        '(?m)^(\s*)"W11_22H2"\s*=\s*"Windows11_22H2".*$',
+                        '$1"W11_22H2" = "Windows11_22H2"' + "`r`n" +
+                        '$1"W11_23H2" = "Windows11_23H2"' + "`r`n" +
+                        '$1"W11_24H2" = "Windows11_24H2"'
+                    )
+
+                    if (($patchedReq -ne $reqContentModern) -and
+                        ($patchedReq -match 'W11_24H2"\s*\)\]|"W11_24H2", ') -and
+                        ($patchedReq -match '"W11_24H2"\s*=\s*"Windows11_24H2"')) {
+                        try {
+                            Set-Content -Path $reqFileModern -Value $patchedReq -Encoding UTF8 -Force
+                            Write-Verbose "Repair-IntuneWin32AppModule: Patch C applied to $reqFileModern"
+                            $anyPatched = $true
+                        }
+                        catch {
+                            Write-Warning "Repair-IntuneWin32AppModule: could not write Patch C — $_"
+                        }
+                    }
+                    else {
+                        Write-Verbose 'Repair-IntuneWin32AppModule: Patch C targets not found (ValidateSet/table format changed) — skipping.'
+                    }
+                }
+            }
+
+            # ══════════════════════════════════════════════════════════════════
+            # Patch D — Invoke-AzureStorageBlobUploadRenew.ps1 (1.4+/1.5+)
+            #   The SAS-URI renewal (triggered mid-upload on large packages) builds
+            #   "deviceAppManagement/$Resource/..." but $Resource (the $FilesUri) ALREADY
+            #   starts with "deviceAppManagement/", producing a doubled segment and a
+            #   "BadRequest: Resource not found for the segment 'deviceAppManagement'" error
+            #   on every renewal — flooding the log and risking failed uploads of large apps.
+            #   Sibling Wait-IntuneWin32AppFileProcessing uses $Resource directly; do the same.
+            # ══════════════════════════════════════════════════════════════════
+            $renewFile = Join-Path $moduleBase 'Private\Invoke-AzureStorageBlobUploadRenew.ps1'
+            if (-not (Test-Path $renewFile)) {
+                Write-Verbose "Repair-IntuneWin32AppModule: $renewFile not found — skipping Patch D."
+            }
+            else {
+                $renewContent = Get-Content $renewFile -Raw
+                if ($renewContent -notmatch 'deviceAppManagement/\$\(\$Resource\)') {
+                    Write-Verbose 'Repair-IntuneWin32AppModule: Patch D already applied.'
+                }
+                else {
+                    # Literal string replacements (within single lines — CRLF/LF agnostic).
+                    $patchedRenew = $renewContent.Replace(
+                        '-Resource "deviceAppManagement/$($Resource)/renewUpload"',
+                        '-Resource "$($Resource)/renewUpload"').Replace(
+                        '-Resource "deviceAppManagement/$($Resource)"',
+                        '-Resource "$($Resource)"')
+                    if ($patchedRenew -ne $renewContent) {
+                        try {
+                            Set-Content -Path $renewFile -Value $patchedRenew -Encoding UTF8 -Force
+                            Write-Verbose "Repair-IntuneWin32AppModule: Patch D applied to $renewFile"
+                            $anyPatched = $true
+                        }
+                        catch {
+                            Write-Warning "Repair-IntuneWin32AppModule: could not write Patch D — $_"
+                        }
+                    }
+                    else {
+                        Write-Verbose 'Repair-IntuneWin32AppModule: Patch D target text not found (format changed) — skipping.'
+                    }
+                }
+            }
+
+            # ══════════════════════════════════════════════════════════════════
+            # Patch E — Add-IntuneWin32App.ps1 category lookup (1.4+/1.5+)
+            #   The category lookup used a server-side OData $filter on displayName with a
+            #   URL-encoded value. That is unreliable for names containing spaces (e.g.
+            #   'Data management' never matched), and an unmatched result returns the response
+            #   wrapper whose null id then failed the whole app-create with:
+            #     "ModelValidationFailure: A null value was found for the property named 'id'".
+            #   Fix: fetch ALL categories and match locally (case-insensitive) — deterministic,
+            #   no encoding involved — and only use a category that actually has an id.
+            # ══════════════════════════════════════════════════════════════════
+            $addAppFileModern = Join-Path $moduleBase 'Public\Add-IntuneWin32App.ps1'
+            if (-not (Test-Path $addAppFileModern)) {
+                Write-Verbose "Repair-IntuneWin32AppModule: $addAppFileModern not found — skipping Patch E."
+            }
+            else {
+                $addContentModern = Get-Content $addAppFileModern -Raw
+                if ($addContentModern -match 'mobileAppCategories"\s*-ErrorAction\s*"Stop"\s*\|\s*Where-Object') {
+                    Write-Verbose 'Repair-IntuneWin32AppModule: Patch E already applied.'
+                }
+                else {
+                    # Replace the whole category query line (any encoding variant) with a deterministic
+                    # fetch-all + local match. MatchEvaluator keeps the replacement string literal.
+                    $localMatch = '$Category = Invoke-MSGraphOperation -Get -APIVersion "Beta" -Resource "deviceAppManagement/mobileAppCategories" -ErrorAction "Stop" | Where-Object { $_.displayName -eq $CategoryNameItem } | Select-Object -First 1'
+                    $patchedAdd = [regex]::Replace(
+                        $addContentModern,
+                        '\$Category = Invoke-MSGraphOperation -Get -APIVersion "Beta" -Resource "deviceAppManagement/mobileAppCategories\?[^\r\n]*?-ErrorAction "Stop"',
+                        { param($m) $localMatch })
+                    # Only use the category when it resolved to a real id (idempotent: a no-op if an
+                    # earlier patch already added the guard).
+                    $patchedAdd = $patchedAdd.Replace(
+                        'if ($null -ne $Category) {',
+                        'if ($null -ne $Category -and $Category.id) {')
+                    if (($patchedAdd -ne $addContentModern) -and
+                        ($patchedAdd -match 'mobileAppCategories"\s*-ErrorAction\s*"Stop"\s*\|\s*Where-Object')) {
+                        try {
+                            Set-Content -Path $addAppFileModern -Value $patchedAdd -Encoding UTF8 -Force
+                            Write-Verbose "Repair-IntuneWin32AppModule: Patch E applied to $addAppFileModern"
+                            $anyPatched = $true
+                        }
+                        catch {
+                            Write-Warning "Repair-IntuneWin32AppModule: could not write Patch E — $_"
+                        }
+                    }
+                    else {
+                        Write-Verbose 'Repair-IntuneWin32AppModule: Patch E target not found (format changed) — skipping.'
                     }
                 }
             }

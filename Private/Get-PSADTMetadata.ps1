@@ -1,3 +1,4 @@
+# Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
 <#
 .SYNOPSIS
     Parses a PSADT v4 Invoke-AppDeployToolkit.ps1 and returns application metadata.

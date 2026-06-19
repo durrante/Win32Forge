@@ -33,9 +33,11 @@ Every row in the grid is a complete app record. The same fields available in the
 
 ## Adding apps
 
-### Scan a folder
+### Import Subfolders (1 level)
 
-Click **Scan Folder** and select a parent directory. Win32Forge scans for subfolders that look like app packages and adds each one as a row, auto-detecting PSADT packages and extracting their metadata.
+Click **+ Import Subfolders (1 level)** and select a parent directory. Win32Forge imports **every immediate subfolder** (one level down — no recursion) as a row, auto-detecting PSADT packages, detection scripts, logos, and metadata files for each.
+
+When it finishes, a **summary window** lists every imported app and shows, per app, whether a PSADT package, detection script, logo, and metadata file were found — and calls out any app that still needs a detection rule before it can upload. This is the fastest way to queue a whole catalogue of packages laid out as one-folder-per-app.
 
 ### Add individually
 
@@ -49,15 +51,18 @@ Click **Load JSON** to import a previously saved queue. This is useful for repea
 
 ## Auto-detection when a source folder is set
 
-Whenever a source folder is selected or scanned, Win32Forge automatically looks for two things:
+Whenever a source folder is selected or scanned, Win32Forge automatically looks in the **root** of that folder for:
 
 **Detection script**
-Scans the root of the source folder for any `.ps1` file with "detection" in its name. If found and no detection method has already been set for the row, it is automatically set as the PowerShell detection script.
+Any `.ps1` file with "detection" in its name. If found and no detection method has already been set for the row, it is automatically set as the PowerShell detection script.
 
 **Logo**
-Scans only the root of the source folder for a PNG, JPG, or JPEG file. If found and no logo has been set, the first match is automatically used as the app logo.
+A PNG, JPG, or JPEG file. If found and no logo has been set, the first match is automatically used as the app logo.
 
-A notification is shown each time so you can confirm or override the auto-detected values. Both can be changed at any point by editing the row.
+**Metadata file**
+An optional `metadata.txt` or `metadata.json`. If present, it fills the row's **Description**, **Information URL**, **Privacy URL**, and **Categories** (only the fields left blank). See [[PSADT Support|PSADT-Support]] / the README for the `metadata.txt` format.
+
+A notification is shown each time so you can confirm or override the auto-detected values. All can be changed at any point by editing the row.
 
 ---
 
@@ -66,6 +71,12 @@ A notification is shown each time so you can confirm or override the auto-detect
 Detection method and assignment cannot be fully configured in the grid cells alone. Click **Edit Selected** (or double-click a row and use the Edit Full button) to open the complete single-app upload form for that row. Changes saved in the form are written back to the row.
 
 You can also right-click any row for a context menu with Edit Full, Delete, and Run Now options.
+
+---
+
+## Changing the template on multiple rows
+
+To switch several rows to a different template at once, select them and click **Set Template ▾**, then pick the template. It is applied to the selected rows only (with a confirmation prompt), overwriting their template-driven settings — assignment, architecture, install/uninstall commands, return codes, restart behaviour — while leaving each row's source folder, detection, logo, description, and URLs untouched.
 
 ---
 

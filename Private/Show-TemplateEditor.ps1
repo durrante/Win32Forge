@@ -1,3 +1,4 @@
+# Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
 <#
 .SYNOPSIS
     WPF Template Editor — create and edit upload templates via a GUI.
@@ -720,6 +721,10 @@ function Show-TemplateEditor {
     #region PSADT toggle helpers
     # ─────────────────────────────────────────────────────────────────────────
 
+    # Standard PSADT v4 framework commands — auto-suggested when PSADT is enabled.
+    $script:psadtInstallCmd   = 'Invoke-AppDeployToolkit.exe -DeployMode Silent'
+    $script:psadtUninstallCmd = 'Invoke-AppDeployToolkit.exe -DeploymentType Uninstall -DeployMode Silent'
+
     function Apply-PsadtState {
         param([bool]$IsPSADT)
         if ($IsPSADT) {
@@ -729,6 +734,12 @@ function Show-TemplateEditor {
             $txtNotesHint.Text  = 'Auto-filled from PSADT AppScriptAuthor when the template is used.'
             $txtOwnerHint.Text  = 'Auto-filled from PSADT AppScriptAuthor when the template is used.'
             $txtInstallHint.Text = 'Auto-suggested from PSADT manifest — you can override this if needed.'
+
+            # Auto-suggest the PSADT framework commands when the fields are empty so a new
+            # PSADT template arrives at the Commands screen pre-populated instead of blank.
+            # Existing/custom values (e.g. when loading a saved template) are left untouched.
+            if ([string]::IsNullOrWhiteSpace($txtTplInstall.Text))   { $txtTplInstall.Text   = $script:psadtInstallCmd }
+            if ([string]::IsNullOrWhiteSpace($txtTplUninstall.Text)) { $txtTplUninstall.Text = $script:psadtUninstallCmd }
         } else {
             $panelPsadtInfo.Visibility = [System.Windows.Visibility]::Collapsed
             $txtTplNotes.IsEnabled = $true
@@ -736,6 +747,11 @@ function Show-TemplateEditor {
             $txtNotesHint.Text  = 'Written to the Intune app Notes field.'
             $txtOwnerHint.Text  = 'Person or team responsible for this application.'
             $txtInstallHint.Text = 'Leave blank to use the default command for the package type.'
+
+            # If the fields still hold the auto-suggested PSADT commands (user didn't
+            # customise them), clear them so a non-PSADT template doesn't inherit them.
+            if ($txtTplInstall.Text.Trim()   -eq $script:psadtInstallCmd)   { $txtTplInstall.Text   = '' }
+            if ($txtTplUninstall.Text.Trim() -eq $script:psadtUninstallCmd) { $txtTplUninstall.Text = '' }
         }
     }
 

@@ -1,3 +1,4 @@
+# Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
 <#
 .SYNOPSIS
     Creates a .intunewin package from a source folder using IntuneWinAppUtil.exe.
@@ -67,34 +68,68 @@ function New-IntunePackage {
         throw "IntuneWinAppUtil.exe not found. Run Setup-Win32Forge.ps1 to download it, or set the path in Config\config.json."
     }
 
-    # Use ProcessStartInfo with redirected stdout/stderr to prevent output-buffer freeze
-    $psi                       = [System.Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName              = $IntuneWinAppUtilPath
-    $psi.Arguments             = "-c `"$SourceFolder`" -s `"$SetupFile`" -o `"$OutputFolder`" -q"
-    $psi.UseShellExecute       = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.CreateNoWindow        = $true
+    # Runs IntuneWinAppUtil.exe against a source folder. ProcessStartInfo with redirected
+    # stdout/stderr prevents output-buffer freeze when run from a WPF host.
+    function Invoke-PackageExe {
+        param([string]$Source)
+        $psi                        = [System.Diagnostics.ProcessStartInfo]::new()
+        $psi.FileName               = $IntuneWinAppUtilPath
+        $psi.Arguments              = "-c `"$Source`" -s `"$SetupFile`" -o `"$OutputFolder`" -q"
+        $psi.UseShellExecute        = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+        $psi.CreateNoWindow         = $true
 
-    $proc = [System.Diagnostics.Process]::new()
-    $proc.StartInfo = $psi
-    $proc.Start() | Out-Null
+        $p = [System.Diagnostics.Process]::new()
+        $p.StartInfo = $psi
+        $p.Start() | Out-Null
+        # Read output asynchronously to prevent deadlock if a buffer fills
+        $o = $p.StandardOutput.ReadToEndAsync()
+        $e = $p.StandardError.ReadToEndAsync()
+        $p.WaitForExit()
+        $o.Wait(); $e.Wait()
+        return [pscustomobject]@{ ExitCode = $p.ExitCode; Stdout = $o.Result.Trim(); Stderr = $e.Result.Trim() }
+    }
 
-    # Read output asynchronously to prevent deadlock if buffer fills
-    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
-    $stderrTask = $proc.StandardError.ReadToEndAsync()
-    $proc.WaitForExit()
-    $stdoutTask.Wait(); $stderrTask.Wait()
+    $result = Invoke-PackageExe -Source $SourceFolder
 
-    $exeStdout = $stdoutTask.Result.Trim()
-    $exeStderr = $stderrTask.Result.Trim()
-    Write-ToolLog "IntuneWinAppUtil.exe exited: code=$($proc.ExitCode)" -Level DEBUG
-    if ($exeStdout) { Write-ToolLog "  stdout: $exeStdout" -Level DEBUG }
-    if ($exeStderr) { Write-ToolLog "  stderr: $exeStderr" -Level $(if ($proc.ExitCode -ne 0) { 'ERROR' } else { 'WARN' }) }
+    # IntuneWinAppUtil.exe is a .NET Framework tool with the classic 260-char MAX_PATH limit.
+    # A deep source tree (e.g. a PSADT payload under a long OneDrive path) can exceed it and fail
+    # with "DirectoryNotFoundException: Could not find a part of the path". When we see that
+    # signature, retry once via a short directory junction so the paths the tool opens are short.
+    $looksLikeLongPath = ($result.ExitCode -ne 0) -and
+        (("$($result.Stdout)`n$($result.Stderr)") -match 'Could not find a part of the path|DirectoryNotFoundException|PathTooLong|filename or extension is too long')
+    if ($looksLikeLongPath) {
+        $junctionRoot = Join-Path $env:SystemDrive 'W32F'
+        $junction     = Join-Path $junctionRoot ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $madeJunction = $false
+        try {
+            New-Item -ItemType Directory -Path $junctionRoot -Force -ErrorAction Stop | Out-Null
+            New-Item -ItemType Junction -Path $junction -Target $SourceFolder -ErrorAction Stop | Out-Null
+            $madeJunction = $true
+            Write-Host "  [!] Source path exceeds the 260-char limit — retrying via short path ($junction)..." -ForegroundColor Yellow
+            Write-ToolLog "Long-path failure detected; retrying package via junction '$junction' -> '$SourceFolder'" -Level WARN
+            $result = Invoke-PackageExe -Source $junction
+        }
+        catch {
+            Write-ToolLog "Could not create short-path junction for retry — $($_.Exception.Message)" -Level ERROR
+        }
+        finally {
+            # IMPORTANT: delete the reparse point only (non-recursive) so the real source is untouched.
+            if ($madeJunction) {
+                try { [System.IO.Directory]::Delete($junction, $false) }
+                catch { Write-ToolLog "Could not remove junction '$junction' — $($_.Exception.Message)" -Level WARN }
+            }
+        }
+    }
 
-    if ($proc.ExitCode -ne 0) {
-        $errText = if ($exeStderr) { $exeStderr } else { $exeStdout }
-        throw "IntuneWinAppUtil.exe failed (exit $($proc.ExitCode))$(if ($errText) {": $errText"})"
+    Write-ToolLog "IntuneWinAppUtil.exe exited: code=$($result.ExitCode)" -Level DEBUG
+    if ($result.Stdout) { Write-ToolLog "  stdout: $($result.Stdout)" -Level DEBUG }
+    if ($result.Stderr) { Write-ToolLog "  stderr: $($result.Stderr)" -Level $(if ($result.ExitCode -ne 0) { 'ERROR' } else { 'WARN' }) }
+
+    if ($result.ExitCode -ne 0) {
+        $errText = if ($result.Stderr) { $result.Stderr } else { $result.Stdout }
+        throw "IntuneWinAppUtil.exe failed (exit $($result.ExitCode))$(if ($errText) {": $errText"})"
     }
 
     # Locate the generated .intunewin file

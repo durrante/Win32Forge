@@ -50,5 +50,6 @@ See [[Installation]] for full details.
 
 - **Templates** — JSON files defining deployment settings (assignment, commands, return codes, architecture). Select one per app; create and edit them in the built-in Template Editor.
 - **PSADT support** — Point Win32Forge at a PSAppDeployToolkit v4 package and it reads `$appName`, `$appVersion`, `$appVendor`, and author from the script automatically. The install commands in a PSADT template are the PSADT framework's own commands — PSADT handles calling your actual installer internally.
-- **Bulk manager** — A full catalogue editor: queue apps in a grid with per-row fields for every Intune property, scan a folder to discover packages, import/export JSON, and upload sequentially with live status.
+- **Bulk manager** — A full catalogue editor: queue apps in a grid with per-row fields for every Intune property, **import every subfolder of a directory in one click**, apply a template to selected rows, import/export JSON, and upload sequentially with live status.
+- **Folder-driven metadata** — Drop a `metadata.txt` (or `metadata.json`) in a package folder and Win32Forge auto-fills the app's description, information/privacy URLs, and categories. Detection scripts and logos in the folder root are auto-detected too.
 - **Auto-documentation** — After each successful upload, Win32Forge writes a Markdown doc with all metadata, detection rules, assignments, the Intune App ID, and a direct portal link. Example documentation files are included in the `Docs\` folder for reference.

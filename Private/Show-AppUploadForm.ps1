@@ -1,3 +1,4 @@
+# Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
 <#
 .SYNOPSIS
     WPF form for configuring and uploading a single Win32 application to Intune.
@@ -1514,26 +1515,39 @@ function Show-AppUploadForm {
         }
         if ($logoFound) { $txtLogo.Text = $logoFound }
 
-        # Show prompts — one combined message if both found, individual otherwise
-        if ($detScript -and $logoFound) {
+        # Metadata file (description / URLs / categories) — root of source folder only.
+        # Fills blank fields only; ticks any matching category checkboxes.
+        $metaInfo    = $null
+        $metaApplied = @()
+        try { $metaInfo = Get-AppMetadata -SourceFolder $Folder } catch {}
+        if ($metaInfo) {
+            if ($metaInfo.Description    -and [string]::IsNullOrWhiteSpace($txtDescription.Text)) { $txtDescription.Text = $metaInfo.Description;    $metaApplied += 'description' }
+            if ($metaInfo.InformationURL -and [string]::IsNullOrWhiteSpace($txtInfoURL.Text))     { $txtInfoURL.Text     = $metaInfo.InformationURL; $metaApplied += 'info URL' }
+            if ($metaInfo.PrivacyURL     -and [string]::IsNullOrWhiteSpace($txtPrivacyURL.Text))  { $txtPrivacyURL.Text  = $metaInfo.PrivacyURL;     $metaApplied += 'privacy URL' }
+            if (@($metaInfo.Categories).Count -gt 0) {
+                $tickedCats = @()
+                foreach ($child in $panelCategories.Children) {
+                    if ($child -is [System.Windows.Controls.CheckBox]) {
+                        if (@($metaInfo.Categories | Where-Object { $_ -ieq [string]$child.Content }).Count -gt 0) {
+                            $child.IsChecked = $true
+                            $tickedCats += [string]$child.Content
+                        }
+                    }
+                }
+                if ($tickedCats.Count -gt 0) { $metaApplied += "categories ($($tickedCats -join ', '))" }
+            }
+        }
+
+        # Show a single summary of everything auto-detected and applied.
+        $applied = [System.Collections.Generic.List[string]]::new()
+        if ($detScript)               { $applied.Add("Detection script : $($detScript.Name)") }
+        if ($logoFound)               { $applied.Add("Logo             : $(Split-Path $logoFound -Leaf)") }
+        if ($metaApplied.Count -gt 0) { $applied.Add("Metadata file    : $(Split-Path $metaInfo.SourceFile -Leaf) — $($metaApplied -join ', ')") }
+        if ($applied.Count -gt 0) {
             [System.Windows.MessageBox]::Show(
-                "Two settings were auto-detected and applied:`n`n" +
-                "  Detection script : $($detScript.Name)`n" +
-                "  Logo             : $(Split-Path $logoFound -Leaf)`n`n" +
+                "The following were auto-detected and applied:`n`n  " + ($applied -join "`n  ") + "`n`n" +
                 "Please confirm or adjust these before uploading.",
                 'Auto-Detected Settings', 'OK', 'Information')
-        } elseif ($detScript) {
-            [System.Windows.MessageBox]::Show(
-                "Detection script auto-detected:`n  $($detScript.Name)`n`n" +
-                "This has been set as the detection method for this app.`n" +
-                "Please confirm or change it before uploading.",
-                'Detection Auto-Set', 'OK', 'Information')
-        } elseif ($logoFound) {
-            [System.Windows.MessageBox]::Show(
-                "Logo auto-detected:`n  $(Split-Path $logoFound -Leaf)`n`n" +
-                "This has been set as the logo for this app.`n" +
-                "Please confirm or change it before uploading.",
-                'Logo Auto-Set', 'OK', 'Information')
         }
     }
 
@@ -2008,7 +2022,8 @@ function Show-AppUploadForm {
             Detection                = $detection
             Architecture             = $archValue
             MinimumSupportedWindowsRelease = $cmbMinOS.SelectedItem.Content
-            AdditionalRequirementRules = ($script:requirementRules | ForEach-Object { $_ })
+            # Always a (possibly empty/single) array so the exported JSON shape is consistent.
+            AdditionalRequirementRules = @($script:requirementRules)
             ReturnCodes              = $script:formReturnCodes
             Assignment               = $assignment
         }
@@ -2133,8 +2148,21 @@ function Show-AppUploadForm {
         }
 
         # ── Additional requirement rules ──
+        # $script:requirementRules is a List[hashtable]. Rules added via the UI are hashtables,
+        # but rules loaded from imported JSON are PSCustomObjects (ConvertFrom-Json) — adding one
+        # directly throws "Cannot find an overload for Add and the argument count 1". Convert to a
+        # hashtable first. @(...) also normalises a single rule (object) vs multiple (array).
         if ($p.AdditionalRequirementRules) {
-            foreach ($rule in $p.AdditionalRequirementRules) { $script:requirementRules.Add($rule) }
+            foreach ($rule in @($p.AdditionalRequirementRules)) {
+                $ruleHash = if ($rule -is [hashtable]) {
+                    $rule
+                } elseif ($null -ne $rule -and $rule.PSObject) {
+                    $h = @{}
+                    $rule.PSObject.Properties | ForEach-Object { $h[$_.Name] = $_.Value }
+                    $h
+                } else { $null }
+                if ($ruleHash) { $script:requirementRules.Add($ruleHash) }
+            }
             Update-ReqRulesListBox
         }
 

@@ -25,6 +25,10 @@
 
 .EXAMPLE
     pwsh .\Invoke-Win32Forge.ps1 -BulkFile C:\Apps\BulkList.json
+
+.NOTES
+    Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT
+    See CHANGELOG.md for the full release history.
 #>
 
 [CmdletBinding()]
@@ -33,6 +37,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Single source of truth for the tool version — surfaced in the window title and the
+# generated documentation footer. Bump this (and CHANGELOG.md) on each release.
+$global:Win32ForgeVersion = '1.1.0'
 
 # Belt-and-braces check in case the #Requires line is somehow bypassed
 if ($PSVersionTable.PSVersion.Major -lt 7) {
@@ -50,6 +58,7 @@ $privateScripts = @(
     'Private\Repair-IntuneWin32AppModule.ps1'
     'Private\Invoke-TenantGraphRequest.ps1'
     'Private\Get-PSADTMetadata.ps1'
+    'Private\Get-AppMetadata.ps1'
     'Private\New-IntunePackage.ps1'
     'Private\Add-IntuneApplication.ps1'
     'Private\New-AppDocumentation.ps1'
@@ -141,11 +150,27 @@ function Invoke-ProcessApp {
             -OutputFolder         $outputFolder `
             -IntuneWinAppUtilPath $Config.IntuneWinAppUtilPath
 
-        # Rename to <AppName>_<Version>_<Type>.intunewin for easy identification
+        # Rename to <AppName>_<Version>_[<Method>]_<Type>.intunewin for easy identification.
         $safeName    = ($AppConfig.DisplayName -replace '[^\w]', '_') -replace '_+', '_'
         $safeVersion = if ($AppConfig.Version)  { ($AppConfig.Version -replace '[^\w\.\-]', '_') } else { 'NoVersion' }
         $appType     = if ($AppConfig.IsPSADT)  { 'PSADT' } else { 'Win32' }
-        $renamedFile = Join-Path $outputFolder "${safeName}_${safeVersion}_${appType}.intunewin"
+
+        # Carry over the acquisition-method token (Evergreen / WinGet / URLFallback / URL)
+        # from the source folder name when present, matching the source-folder convention
+        # (e.g. ..._Latest_Evergreen_PSADT). Whole-segment, case-insensitive match; canonical
+        # casing is preserved. If no method token is found the name stays name_version_type.
+        $methodToken = $null
+        if ($AppConfig.SourceFolder) {
+            $srcSegments = (Split-Path $AppConfig.SourceFolder -Leaf) -split '_'
+            foreach ($known in 'Evergreen','WinGet','URLFallback','URL') {
+                if ($srcSegments -contains $known) { $methodToken = $known; break }
+            }
+        }
+
+        $nameParts = @($safeName, $safeVersion)
+        if ($methodToken) { $nameParts += $methodToken }
+        $nameParts += $appType
+        $renamedFile = Join-Path $outputFolder (($nameParts -join '_') + '.intunewin')
 
         if (Test-Path $renamedFile) { Remove-Item $renamedFile -Force }
         Rename-Item -Path $intunewinPath -NewName (Split-Path $renamedFile -Leaf)
@@ -208,6 +233,17 @@ function ConvertFrom-AppJson {
     if ($cfg.Requirements) {
         if (-not $cfg.Architecture)                   { $cfg.Architecture = $cfg.Requirements.Architecture }
         if (-not $cfg.MinimumSupportedWindowsRelease) { $cfg.MinimumSupportedWindowsRelease = $cfg.Requirements.MinimumOS }
+    }
+
+    # Normalise categories: accept either a Categories array or a single Category string,
+    # and always present a Categories array to the uploader (Add-IntuneApplication reads it).
+    if ((-not $cfg.Categories) -or (@($cfg.Categories).Count -eq 0)) {
+        if ($cfg.Category -and "$($cfg.Category)".Trim() -ne '') {
+            $cfg.Categories = @("$($cfg.Category)".Trim())
+        }
+    }
+    else {
+        $cfg.Categories = @($cfg.Categories)
     }
 
     # Validate source folder

@@ -1,4 +1,5 @@
-﻿<#
+# Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
+<#
 .SYNOPSIS
     WPF Bulk Upload Manager — inline spreadsheet-style queue.
 
@@ -49,7 +50,7 @@ function Show-BulkManager {
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Win32Forge — Bulk Upload Manager"
-    Width="1500" Height="700"
+    Width="1800" Height="840"
     WindowStartupLocation="CenterScreen"
     MinWidth="820" MinHeight="480">
 
@@ -131,9 +132,12 @@ function Show-BulkManager {
 
     <!-- ═══ TOOLBAR ═══ -->
     <Border Grid.Row="1" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="10,7">
-      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+      <!-- WrapPanel so toolbar buttons wrap to a second line instead of running off-page -->
+      <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
 
         <Button x:Name="BtnAddRow"    Content="+ Add Row"         Style="{StaticResource PrimaryBtn}" Background="#4A2B8F"/>
+        <Button x:Name="BtnImportSubfolders" Content="+ Import Subfolders (1 level)" Style="{StaticResource PrimaryBtn}" Background="#4A2B8F"
+                ToolTip="Pick a parent folder and import every immediate subfolder (one level down) as an app row. Each row auto-scans for PSADT metadata, a detection script and a logo. Does NOT recurse into deeper folders."/>
 
         <TextBlock Text="Default Template:" VerticalAlignment="Center" FontSize="11"
                    Foreground="#555" Margin="10,0,4,0"/>
@@ -146,6 +150,8 @@ function Show-BulkManager {
         <Button x:Name="BtnBrowse"    Content="Browse Source..."   Style="{StaticResource ToolBtn}"/>
         <Button x:Name="BtnBrowseLogo" Content="Browse Logo..."    Style="{StaticResource ToolBtn}"/>
         <Button x:Name="BtnAssignment" Content="Set Assignment ▾"  Style="{StaticResource ToolBtn}"/>
+        <Button x:Name="BtnSetTemplate" Content="Set Template ▾" Style="{StaticResource ToolBtn}"
+                ToolTip="Apply a template to the selected row(s) only. Overwrites their assignment, architecture and install/uninstall commands with the chosen template's settings."/>
         <Button x:Name="BtnFullSetup" Content="Detection / Config..." Style="{StaticResource ToolBtn}"/>
 
         <Separator Width="1" Background="#DDD" Margin="4,2,10,2"/>
@@ -172,7 +178,7 @@ function Show-BulkManager {
           </Button.Background>
         </Button>
 
-      </StackPanel>
+      </WrapPanel>
     </Border>
 
     <!-- ═══ DATA GRID ═══ -->
@@ -455,10 +461,17 @@ function Show-BulkManager {
           </DataGridTextColumn.ElementStyle>
           <DataGridTextColumn.EditingElementStyle>
             <Style TargetType="TextBox">
-              <Setter Property="VerticalAlignment" Value="Center"/>
+              <Setter Property="VerticalAlignment" Value="Top"/>
               <Setter Property="Padding"           Value="5,0"/>
               <Setter Property="BorderThickness"   Value="0"/>
               <Setter Property="Background"        Value="Transparent"/>
+              <!-- AcceptsReturn=True stops WPF truncating pasted multi-line descriptions
+                   at the first newline. The editor holds the full block; commit by tabbing
+                   or clicking away (Enter inserts a newline within the description). -->
+              <Setter Property="AcceptsReturn"               Value="True"/>
+              <Setter Property="TextWrapping"                Value="Wrap"/>
+              <Setter Property="MaxHeight"                   Value="160"/>
+              <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
             </Style>
           </DataGridTextColumn.EditingElementStyle>
         </DataGridTextColumn>
@@ -581,10 +594,12 @@ function Show-BulkManager {
     $bulkGrid            = Find 'BulkGrid'
     $global:IntuneUploaderGrid = $bulkGrid  # global ref so Dispatcher [System.Action] lambdas can reach it
     $btnAddRow           = Find 'BtnAddRow'
+    $btnImportSubfolders = Find 'BtnImportSubfolders'
     $cmbDefaultTemplate  = Find 'CmbDefaultTemplate'
     $btnBrowse           = Find 'BtnBrowse'
     $btnBrowseLogo   = Find 'BtnBrowseLogo'
     $btnAssignment   = Find 'BtnAssignment'
+    $btnSetTemplate  = Find 'BtnSetTemplate'
     $btnFullSetup    = Find 'BtnFullSetup'
     $btnRemove       = Find 'BtnRemove'
     $btnClear        = Find 'BtnClear'
@@ -600,6 +615,10 @@ function Show-BulkManager {
     # $script:bmTable — DataTable; parallel display data; never rebuilt (updated in-place)
     $script:bmRows  = [System.Collections.Generic.List[hashtable]]::new()
     $script:bmTable = New-Object System.Data.DataTable
+
+    # When $true, Invoke-SourceScan / Set-RowCommandSuggestion suppress their per-row
+    # MessageBox prompts (used by bulk subfolder import, which shows a single summary instead).
+    $script:bmQuietScan = $false
 
     # _RowIndex (integer, hidden) tracks insertion order for the default sort
     $script:bmTable.Columns.Add('_RowIndex', [int]) | Out-Null
@@ -793,12 +812,17 @@ function Show-BulkManager {
                 } | Where-Object { $_ })
                 if ($nonPsadtTpls.Count -gt 0) {
                     $suggestTpl = $nonPsadtTpls[0]
-                    $ans = [System.Windows.MessageBox]::Show(
-                        "This folder does not contain a PSADT package.`n`n" +
-                        "The selected template ('$currentTpl') is configured for PSADT.`n`n" +
-                        "Switch to '$suggestTpl'?",
-                        'Non-PSADT Folder Detected', 'YesNo', 'Question')
-                    if ($ans -eq 'Yes') {
+                    # During bulk import, switch silently; interactively, ask first.
+                    $doSwitch = if ($script:bmQuietScan) {
+                        $true
+                    } else {
+                        ([System.Windows.MessageBox]::Show(
+                            "This folder does not contain a PSADT package.`n`n" +
+                            "The selected template ('$currentTpl') is configured for PSADT.`n`n" +
+                            "Switch to '$suggestTpl'?",
+                            'Non-PSADT Folder Detected', 'YesNo', 'Question') -eq 'Yes')
+                    }
+                    if ($doSwitch) {
                         $row.Template = $suggestTpl
                         Apply-TemplateToRow -Id $Id -TemplateName $suggestTpl -Force
                     }
@@ -849,26 +873,35 @@ function Show-BulkManager {
         }
         if ($logoFound) { $row.LogoPath = $logoFound }
 
-        # Show auto-set prompts — one combined message if both found, individual otherwise
-        if ($detScript -and $logoFound) {
-            [System.Windows.MessageBox]::Show(
-                "Two settings were auto-detected and applied:`n`n" +
-                "  Detection script : $($detScript.Name)`n" +
-                "  Logo             : $(Split-Path $logoFound -Leaf)`n`n" +
-                "Please confirm or adjust these via the row config before uploading.",
-                'Auto-Detected Settings', 'OK', 'Information')
-        } elseif ($detScript) {
-            [System.Windows.MessageBox]::Show(
-                "Detection script auto-detected:`n  $($detScript.Name)`n`n" +
-                "This has been set as the detection method for this app.`n" +
-                "Please confirm or change it via 'Detection / Config...' before uploading.",
-                'Detection Auto-Set', 'OK', 'Information')
-        } elseif ($logoFound) {
-            [System.Windows.MessageBox]::Show(
-                "Logo auto-detected:`n  $(Split-Path $logoFound -Leaf)`n`n" +
-                "This has been set as the logo for this app.`n" +
-                "Please confirm or change it via 'Config...' before uploading.",
-                'Logo Auto-Set', 'OK', 'Information')
+        # Auto-detect a metadata file (description / URLs / categories) — root of source folder only.
+        # Only fills fields that are currently blank, so existing/edited values are never overwritten.
+        $metaInfo    = $null
+        $metaApplied = @()
+        try { $metaInfo = Get-AppMetadata -SourceFolder $Path } catch {}
+        if ($metaInfo) {
+            $row._metaApplied = $true
+            if ($metaInfo.Description    -and [string]::IsNullOrWhiteSpace([string]$row.Description))    { $row.Description    = $metaInfo.Description;    $metaApplied += 'description' }
+            if ($metaInfo.InformationURL -and [string]::IsNullOrWhiteSpace([string]$row.InformationURL)) { $row.InformationURL = $metaInfo.InformationURL; $metaApplied += 'info URL' }
+            if ($metaInfo.PrivacyURL     -and [string]::IsNullOrWhiteSpace([string]$row.PrivacyURL))     { $row.PrivacyURL     = $metaInfo.PrivacyURL;     $metaApplied += 'privacy URL' }
+            if (@($metaInfo.Categories).Count -gt 0 -and (-not $row.Categories -or @($row.Categories).Count -eq 0)) {
+                $row.Categories = @($metaInfo.Categories)
+                $metaApplied += "categories ($(@($metaInfo.Categories) -join ', '))"
+            }
+        }
+
+        # Show a single summary of everything auto-detected (suppressed during bulk import,
+        # which presents one combined summary for all rows instead).
+        if (-not $script:bmQuietScan) {
+            $applied = [System.Collections.Generic.List[string]]::new()
+            if ($detScript)            { $applied.Add("Detection script : $($detScript.Name)") }
+            if ($logoFound)            { $applied.Add("Logo             : $(Split-Path $logoFound -Leaf)") }
+            if ($metaApplied.Count -gt 0) { $applied.Add("Metadata file    : $(Split-Path $metaInfo.SourceFile -Leaf) — $($metaApplied -join ', ')") }
+            if ($applied.Count -gt 0) {
+                [System.Windows.MessageBox]::Show(
+                    "The following were auto-detected and applied:`n`n  " + ($applied -join "`n  ") + "`n`n" +
+                    "Please confirm or adjust these via the row config before uploading.",
+                    'Auto-Detected Settings', 'OK', 'Information')
+            }
         }
 
         if ($dr) {
@@ -882,6 +915,11 @@ function Show-BulkManager {
             $dr['LogoPath']      = $row.LogoPath            ?? ''
             $dr['Template']      = $row.Template            ?? ''
             $dr['Detection']     = Get-DetectionSummary -Det $row.Detection
+            $dr['InformationURL'] = $row.InformationURL     ?? ''
+            $dr['PrivacyURL']    = $row.PrivacyURL          ?? ''
+            if ($row.Categories -and @($row.Categories).Count -gt 0) {
+                $dr['Category'] = @($row.Categories) -join ', '
+            }
         }
 
         Refresh-StatusBar
@@ -992,7 +1030,7 @@ function Show-BulkManager {
             $dr['InstallCmd']   = $row.InstallCommandLine
             $dr['UninstallCmd'] = $row.UninstallCommandLine
         }
-        if ($warnExe) {
+        if ($warnExe -and -not $script:bmQuietScan) {
             [System.Windows.MessageBox]::Show(
                 "EXE installer selected — Install and Uninstall commands have been pre-filled with the filename only.`n`n" +
                 "Please add the appropriate silent switches (e.g. /S, /quiet, /silent) before uploading.`n" +
@@ -1010,6 +1048,9 @@ function Show-BulkManager {
 
         $newRow = $Config.Clone()
         if (-not $newRow._id)     { $newRow._id     = $id }
+        # Keep the local $id in sync with the row's actual id, so callers may pre-supply an
+        # _id (e.g. bulk subfolder import) and the template/assignment calls below still resolve.
+        $id = $newRow._id
         if (-not $newRow._status) { $newRow._status = 'Pending' }
         if (-not $newRow.Template){ $newRow.Template = $defTpl }
         # Do NOT hardcode a default assignment here — let Apply-TemplateToRow
@@ -1025,7 +1066,9 @@ function Show-BulkManager {
         $dr['Version']        = $newRow.Version             ?? ''
         $dr['Publisher']      = $newRow.Publisher           ?? ''
         $dr['Description']    = $newRow.Description         ?? ''
-        $dr['Category']       = $newRow.Category            ?? ''
+        $dr['Category']       = if ($newRow.Categories -and @($newRow.Categories).Count -gt 0) {
+                                    @($newRow.Categories) -join ', '
+                                } else { $newRow.Category ?? '' }
         $dr['SetupFile']      = $newRow.SetupFile           ?? ''
         $dr['InstallCmd']     = $newRow.InstallCommandLine  ?? ''
         $dr['UninstallCmd']   = $newRow.UninstallCommandLine ?? ''
@@ -1403,6 +1446,178 @@ function Show-BulkManager {
         Invoke-SourceScan -Id $id -Path $newPath
     })
 
+    # ── Import Subfolders (one level down) ───────────────────────────────────
+    # Builds and shows a scrollable summary of a bulk subfolder import.
+    function Show-ImportSummary {
+        param([string]$ParentFolder, $Results)
+
+        $total      = @($Results).Count
+        $psadtCount = @($Results | Where-Object { $_.IsPSADT }).Count
+        $detCount   = @($Results | Where-Object { $_.Detection }).Count
+        $logoCount  = @($Results | Where-Object { $_.Logo }).Count
+        $metaCount  = @($Results | Where-Object { $_.Meta }).Count
+        $needAttn   = @($Results | Where-Object { -not $_.Detection -and -not $_.Error })
+        $errored    = @($Results | Where-Object { $_.Error })
+
+        $sb = [System.Text.StringBuilder]::new()
+        [void]$sb.AppendLine("Detection script found : $detCount of $total")
+        [void]$sb.AppendLine("Logo found             : $logoCount of $total")
+        [void]$sb.AppendLine("Metadata file found    : $metaCount of $total")
+        [void]$sb.AppendLine("PSADT packages         : $psadtCount of $total")
+        if ($errored.Count -gt 0) { [void]$sb.AppendLine("Failed to scan         : $($errored.Count) of $total") }
+        [void]$sb.AppendLine('')
+        $fmt = '{0,-3} {1,-36} {2,-6} {3,-8} {4,-5} {5,-5}'
+        $hdr = ($fmt -f '#', 'App / Folder', 'PSADT', 'Detect', 'Logo', 'Meta')
+        [void]$sb.AppendLine($hdr)
+        [void]$sb.AppendLine(('-' * $hdr.Length))
+        $n = 0
+        foreach ($r in $Results) {
+            $n++
+            $name = if ($r.DisplayName) { [string]$r.DisplayName } else { [string]$r.Folder }
+            if ($name.Length -gt 36) { $name = $name.Substring(0, 33) + '...' }
+            # NOTE: the -f expression MUST be wrapped in its own parentheses / assigned first.
+            # Inside a method call, bare commas are argument separators, so otherwise PowerShell
+            # would evaluate "$fmt -f $n" with a single argument and throw a FormatException.
+            $line = $fmt -f $n, $name,
+                ($(if ($r.Error)     { '-'   } elseif ($r.IsPSADT)   { 'yes' } else { 'no' })),
+                ($(if ($r.Error)     { 'ERR' } elseif ($r.Detection) { 'yes' } else { 'MISSING' })),
+                ($(if ($r.Error)     { '-'   } elseif ($r.Logo)      { 'yes' } else { '-' })),
+                ($(if ($r.Error)     { '-'   } elseif ($r.Meta)      { 'yes' } else { '-' }))
+            [void]$sb.AppendLine($line)
+        }
+        if ($needAttn.Count -gt 0) {
+            [void]$sb.AppendLine('')
+            [void]$sb.AppendLine("No detection script was found for $($needAttn.Count) app(s) — set a")
+            [void]$sb.AppendLine("detection rule via 'Detection / Config...' before uploading these:")
+            foreach ($r in $needAttn) {
+                $name = if ($r.DisplayName) { [string]$r.DisplayName } else { [string]$r.Folder }
+                [void]$sb.AppendLine("  - $name")
+            }
+        }
+        if ($errored.Count -gt 0) {
+            [void]$sb.AppendLine('')
+            [void]$sb.AppendLine("Failed to scan $($errored.Count) folder(s) (see the tool log for details):")
+            foreach ($r in $errored) {
+                [void]$sb.AppendLine("  - $($r.Folder): $($r.Error)")
+            }
+        }
+
+        $win = New-Object System.Windows.Window
+        $win.Title  = 'Subfolder Import Summary'
+        $win.Width  = 680
+        $win.Height = 560
+        $win.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterOwner
+        try { $win.Owner = $window } catch {}
+
+        $grid = New-Object System.Windows.Controls.Grid
+        $grid.Margin = New-Object System.Windows.Thickness(14)
+        $rd0 = New-Object System.Windows.Controls.RowDefinition; $rd0.Height = [System.Windows.GridLength]::Auto
+        $rd1 = New-Object System.Windows.Controls.RowDefinition; $rd1.Height = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+        $rd2 = New-Object System.Windows.Controls.RowDefinition; $rd2.Height = [System.Windows.GridLength]::Auto
+        $grid.RowDefinitions.Add($rd0); $grid.RowDefinitions.Add($rd1); $grid.RowDefinitions.Add($rd2)
+
+        $head = New-Object System.Windows.Controls.TextBlock
+        $head.Text         = "Imported $total app(s) from:`n$ParentFolder"
+        $head.FontWeight   = [System.Windows.FontWeights]::Bold
+        $head.TextWrapping = [System.Windows.TextWrapping]::Wrap
+        $head.Margin       = New-Object System.Windows.Thickness(0, 0, 0, 10)
+        [System.Windows.Controls.Grid]::SetRow($head, 0)
+        $grid.Children.Add($head) | Out-Null
+
+        $txt = New-Object System.Windows.Controls.TextBox
+        $txt.Text       = $sb.ToString()
+        $txt.IsReadOnly = $true
+        $txt.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
+        $txt.FontSize   = 12
+        $txt.TextWrapping                  = [System.Windows.TextWrapping]::NoWrap
+        $txt.VerticalScrollBarVisibility   = [System.Windows.Controls.ScrollBarVisibility]::Auto
+        $txt.HorizontalScrollBarVisibility = [System.Windows.Controls.ScrollBarVisibility]::Auto
+        $txt.BorderBrush     = [System.Windows.Media.Brushes]::LightGray
+        $txt.BorderThickness = New-Object System.Windows.Thickness(1)
+        $txt.Padding         = New-Object System.Windows.Thickness(6)
+        [System.Windows.Controls.Grid]::SetRow($txt, 1)
+        $grid.Children.Add($txt) | Out-Null
+
+        $btn = New-Object System.Windows.Controls.Button
+        $btn.Content             = 'Close'
+        $btn.Width               = 90
+        $btn.Height              = 28
+        $btn.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Right
+        $btn.Margin              = New-Object System.Windows.Thickness(0, 12, 0, 0)
+        $btn.Add_Click({ $win.Close() }.GetNewClosure())
+        [System.Windows.Controls.Grid]::SetRow($btn, 2)
+        $grid.Children.Add($btn) | Out-Null
+
+        $win.Content = $grid
+        $win.ShowDialog() | Out-Null
+    }
+
+    $btnImportSubfolders.Add_Click({
+        $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dlg.Description = 'Select the PARENT folder. Every immediate subfolder (one level down) is imported as an app row. Deeper folders are not scanned.'
+        $dlg.ShowNewFolderButton = $false
+        if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+
+        $parent = $dlg.SelectedPath
+        if (-not (Test-Path $parent -PathType Container)) { return }
+
+        $subs = @(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue | Sort-Object Name)
+        if ($subs.Count -eq 0) {
+            [System.Windows.MessageBox]::Show("No subfolders found in:`n$parent",
+                'Import Subfolders', 'OK', 'Information') | Out-Null
+            return
+        }
+
+        $results = [System.Collections.Generic.List[object]]::new()
+        $script:bmQuietScan = $true
+        try {
+            foreach ($sub in $subs) {
+                # Per-folder guard: one bad folder must not abort the whole import or crash
+                # the window. The full error (with stack trace) is written to the tool log.
+                try {
+                    $rowId = [guid]::NewGuid().ToString()
+                    Add-BmRow -Config @{ _id = $rowId } | Out-Null
+                    Invoke-SourceScan -Id $rowId -Path $sub.FullName | Out-Null
+
+                    $idx = Find-RowById -Id $rowId
+                    $row = if ($idx -ge 0) { $script:bmRows[$idx] } else { $null }
+                    $results.Add([pscustomobject]@{
+                        Folder      = $sub.Name
+                        DisplayName = if ($row -and $row.DisplayName) { $row.DisplayName } else { $sub.Name }
+                        IsPSADT     = [bool]($row -and $row.IsPSADT)
+                        Detection   = [bool]($row -and $row.Detection)
+                        Logo        = [bool]($row -and -not [string]::IsNullOrWhiteSpace($row.LogoPath))
+                        Meta        = [bool]($row -and $row._metaApplied)
+                        Error       = $null
+                    })
+                }
+                catch {
+                    Write-ToolLog "Import Subfolders: failed scanning '$($sub.FullName)' — $($_.Exception.Message)" -Level ERROR -ErrorRecord $_
+                    $results.Add([pscustomobject]@{
+                        Folder = $sub.Name; DisplayName = $sub.Name
+                        IsPSADT = $false; Detection = $false; Logo = $false; Meta = $false
+                        Error = $_.Exception.Message
+                    })
+                }
+            }
+        }
+        finally {
+            $script:bmQuietScan = $false
+        }
+
+        Refresh-StatusBar
+        try {
+            Show-ImportSummary -ParentFolder $parent -Results $results
+        }
+        catch {
+            Write-ToolLog "Import Subfolders: summary window failed — $($_.Exception.Message)" -Level ERROR -ErrorRecord $_
+            [System.Windows.MessageBox]::Show(
+                ("Imported {0} subfolder(s) into the queue." -f $results.Count) + "`n`n" +
+                ("(The summary window could not be shown: {0})" -f $_.Exception.Message),
+                'Import Subfolders', 'OK', 'Information') | Out-Null
+        }
+    })
+
     # ── Browse Logo (image file picker for selected row) ─────────────────────
     $btnBrowseLogo.Add_Click({
         $sel = $bulkGrid.SelectedItem
@@ -1496,6 +1711,61 @@ function Show-BulkManager {
         $btnAssignment.ContextMenu.PlacementTarget = $btnAssignment
         $btnAssignment.ContextMenu.Placement = [System.Windows.Controls.Primitives.PlacementMode]::Bottom
         $btnAssignment.ContextMenu.IsOpen    = $true
+    })
+
+    # ── Set Template (apply a template to the selected rows only) ─────────────
+    function Apply-TemplateToSelected {
+        param([string]$TemplateName)
+        if (-not $TemplateName) { return }
+
+        $targets = @($bulkGrid.SelectedItems | Where-Object { $_ -is [System.Data.DataRowView] })
+        if ($targets.Count -eq 0) {
+            [System.Windows.MessageBox]::Show(
+                'Select one or more rows first, then choose a template to apply.',
+                'Set Template', 'OK', 'Information') | Out-Null
+            return
+        }
+
+        $ans = [System.Windows.MessageBox]::Show(
+            ("Apply template '{0}' to {1} selected app(s)?" -f $TemplateName, $targets.Count) + "`n`n" +
+            "This overwrites their assignment, architecture, install/uninstall commands and other " +
+            "template-driven settings for those rows. Source folder, detection, logo, description and " +
+            "URLs are left untouched.",
+            'Set Template', 'YesNo', 'Question')
+        if ($ans -ne 'Yes') { return }
+
+        foreach ($rowView in $targets) {
+            $id  = $rowView['_Id'] -as [string]
+            $idx = Find-RowById -Id $id
+            if ($idx -lt 0) { continue }
+
+            $script:bmRows[$idx].Template = $TemplateName
+            $dr = Find-DataRow -Id $id
+            if ($dr) { $dr['Template'] = $TemplateName }
+            # -Force so the template's assignment/arch/commands overwrite current values,
+            # mirroring the inline Template-column ComboBox behaviour.
+            Apply-TemplateToRow -Id $id -TemplateName $TemplateName -Force
+        }
+        Refresh-StatusBar
+    }
+
+    # Build the template menu dynamically from the available templates (Tag carries the name).
+    $tplMenu = New-Object System.Windows.Controls.ContextMenu
+    foreach ($tplName in $script:templateNames) {
+        $mi        = [System.Windows.Controls.MenuItem]::new()
+        $mi.Header = $tplName
+        $mi.Tag    = $tplName
+        $mi.Add_Click({
+            param($sender, $e)
+            Apply-TemplateToSelected -TemplateName $sender.Tag
+        })
+        $tplMenu.Items.Add($mi) | Out-Null
+    }
+    $btnSetTemplate.ContextMenu = $tplMenu
+    $btnSetTemplate.Add_Click({
+        $btnSetTemplate.ContextMenu.PlacementTarget = $btnSetTemplate
+        $btnSetTemplate.ContextMenu.Placement = [System.Windows.Controls.Primitives.PlacementMode]::Bottom
+        $btnSetTemplate.ContextMenu.IsOpen    = $true
     })
 
     # ── Full Setup (opens Show-AppUploadForm pre-populated) ───────────────────
@@ -1664,6 +1934,13 @@ function Show-BulkManager {
             foreach ($key in $_.Keys) {
                 if ($key -notmatch '^_') { $h[$key] = $_[$key] }
             }
+            # Ensure categories survive export: prefer an explicit Categories array,
+            # otherwise derive one from the single Category value set via the grid combo.
+            if (-not $h.Categories -or @($h.Categories).Count -eq 0) {
+                if ($h.Category -and "$($h.Category)".Trim() -ne '') {
+                    $h.Categories = @("$($h.Category)".Trim())
+                }
+            }
             $h
         }
 
@@ -1713,7 +1990,7 @@ function Show-BulkManager {
         if ($confirm -ne 'Yes') { return }
 
         # Disable toolbar during upload
-        foreach ($btn in @($btnAddRow,$btnBrowse,$btnBrowseLogo,$btnAssignment,$btnFullSetup,$btnRemove,$btnClear,
+        foreach ($btn in @($btnAddRow,$btnImportSubfolders,$btnBrowse,$btnBrowseLogo,$btnAssignment,$btnSetTemplate,$btnFullSetup,$btnRemove,$btnClear,
                            $btnImport,$btnExport,$btnUploadSel,$btnUploadAll)) {
             $btn.IsEnabled = $false
         }
@@ -1788,7 +2065,7 @@ function Show-BulkManager {
         $txtUploadResult.Text = $summary
 
         # Re-enable toolbar
-        foreach ($btn in @($btnAddRow,$btnBrowse,$btnBrowseLogo,$btnAssignment,$btnFullSetup,$btnRemove,$btnClear,$btnImport)) {
+        foreach ($btn in @($btnAddRow,$btnImportSubfolders,$btnBrowse,$btnBrowseLogo,$btnAssignment,$btnSetTemplate,$btnFullSetup,$btnRemove,$btnClear,$btnImport)) {
             $btn.IsEnabled = $true
         }
         Refresh-StatusBar  # re-enables export/upload buttons based on row count
@@ -1808,7 +2085,7 @@ function Show-BulkManager {
     # When any toolbar button receives focus (user clicked it), commit any in-progress
     # cell edit so text-column and ComboBox changes don't need an explicit Enter press.
     $commitEdit = { if ($bulkGrid.IsEditing) { $bulkGrid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Row, $true) } }
-    foreach ($btn in @($btnAddRow,$btnBrowse,$btnBrowseLogo,$btnAssignment,$btnFullSetup,
+    foreach ($btn in @($btnAddRow,$btnImportSubfolders,$btnBrowse,$btnBrowseLogo,$btnAssignment,$btnSetTemplate,$btnFullSetup,
                         $btnRemove,$btnClear,$btnImport,$btnExport,$btnUploadSel,$btnUploadAll)) {
         $btn.Add_GotFocus($commitEdit)
     }

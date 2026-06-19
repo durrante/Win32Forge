@@ -13,6 +13,8 @@ Win32Forge is a free, open source PowerShell 7 GUI tool for packaging, uploading
 
 Win32Forge uses the **[IntuneWin32App](https://github.com/MSEndpointMgr/IntuneWin32App)** PowerShell module by [MSEndpointMgr](https://msendpointmgr.com) as its backend for all Intune app creation, detection rules, requirement rules, and assignments. A huge thanks to the MSEndpointMgr team for building and maintaining that module — Win32Forge would not be possible without it.
 
+> On launch, Win32Forge applies a few small, idempotent **compatibility patches** to your locally-installed copy of the module (covering non-US locale date handling, Windows 11 24H2 as a minimum OS, large-app upload token renewal, and category resolution). These are local shims applied at runtime; the upstream module is excellent and unmodified in the gallery. See [CHANGELOG.md](CHANGELOG.md) for details.
+
 ---
 
 ## Features
@@ -28,12 +30,40 @@ Upload one app at a time through a guided, tabbed form covering:
 - **Assignment** — All Devices, All Users, specific Entra ID group(s) with per-group intent and notification, or no assignment. Intune assignment filters (loaded from your tenant) can be applied to any assignment type
 - **Logo** — attach a PNG or JPG app icon for the Company Portal tile
 
-When you select a source folder, Win32Forge automatically scans it and pre-fills two fields if it finds them:
+When you select a source folder, Win32Forge automatically scans its **root** and pre-fills fields if it finds them:
 
-- **Detection script** — any `.ps1` file with "detection" in its name in the **root** of the source folder is auto-set as the PowerShell detection script (only if no detection method has been set yet)
-- **Logo** — the first PNG, JPG, or JPEG found in the **root** of the source folder is auto-set as the app logo (only if no logo has been set yet)
+- **Detection script** — the first `.ps1` file with "detection" in its name is set as the PowerShell detection script (only if no detection method has been set yet)
+- **Logo** — the first PNG, JPG, or JPEG found is set as the app logo (only if no logo has been set yet)
+- **Metadata file** — an optional `metadata.json` or `metadata.txt` is read and used to fill the **Description**, **Information URL**, **Privacy URL**, and **Categories** (only the fields you've left blank — see [Per-app metadata files](#per-app-metadata-files))
 
 A confirmation prompt is shown each time so you can review or override before uploading.
+
+### Per-app metadata files
+
+Drop an optional `metadata.txt` (or `metadata.json`) in the root of a source folder and Win32Forge maps it onto the app's metadata automatically — handy for keeping a rich, version-controlled description alongside the package. `metadata.txt` is a simple section format:
+
+```text
+Description:
+**My App** is a great tool.
+
+## Key Features
+* Does the thing
+* Does the other thing
+
+URL:
+https://vendor.com/product
+
+Privacy URL:
+https://vendor.com/privacy
+
+Category:
+Productivity, Utilities
+```
+
+- Recognised section headers: `Description:`, `URL:` (also `Info URL:` / `Information URL:`), `Privacy URL:` (also `Privacy:`), and `Category:` / `Categories:` (comma- or line-separated).
+- The Description supports full Markdown and is written into the generated documentation.
+- Category names must match an existing Intune category in your tenant to be applied.
+- Prefer JSON? A `metadata.json` with `Description`, `URL`/`InformationURL`, `PrivacyURL`, and `Categories` keys works too and takes precedence.
 
 ### Template system
 
@@ -49,11 +79,12 @@ When a template has `IsPSADT` enabled, Win32Forge scans the source folder for `I
 
 The bulk manager is a full app catalogue editor. Each row in the grid represents one app and exposes the same fields available in the single upload form — source folder, template, display name, version, publisher, setup file, install/uninstall commands, description, information URL, privacy URL, logo, detection method, and assignment. Using templates reduces the number of fields you need to fill per row; the template can be changed per row independently of the global default.
 
-The same auto-detection applies here too: when a source folder is set, Win32Forge scans for a detection script and logo and pre-fills them if found.
+The same auto-detection applies here too: when a source folder is set, Win32Forge scans for a detection script, logo, and metadata file and pre-fills them if found.
 
 Additional features:
 
-- **Scan a folder** to auto-discover multiple app packages at once
+- **Import Subfolders (1 level)** — point at a parent folder and import **every immediate subfolder** as an app row in one click (no recursion). A summary window then reports, per app, whether a PSADT package, detection script, logo, and metadata file were detected, and flags any app still needing a detection rule
+- **Set Template** — apply a template to the currently selected rows in one action, rather than changing each row individually
 - **Edit any row** in the full single-app form for detailed detection and assignment configuration
 - **Import/export** the entire queue as JSON for repeatable deployments
 - **Right-click context menu** for per-row actions (edit, delete, upload now)
