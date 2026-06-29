@@ -28,3 +28,9 @@ Desktop.ini
 
 # PowerShell temp files
 *.ps1xml.bak
+
+# Claude in general
+.claude/
+
+# client info
+Templates/ChorleyTest*
