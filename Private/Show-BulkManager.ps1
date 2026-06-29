@@ -123,7 +123,7 @@ function Show-BulkManager {
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
               <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Bulk Upload Manager" FontSize="20" FontWeight="Light" Foreground="White"/>
-                <TextBlock Text="Add rows, edit inline ÔÇö Source Folder auto-scans PSADT metadata. Full Setup for detection/assignment."
+                <TextBlock Text="Add rows, edit inline &#8212; Source Folder auto-scans PSADT metadata. Full Setup for detection/assignment."
                            FontSize="11" Foreground="#D4C5F9" Margin="0,1,0,0"/>
               </StackPanel>
             </StackPanel>
