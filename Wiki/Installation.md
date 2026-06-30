@@ -18,7 +18,7 @@
 git clone https://github.com/durrante/Win32Forge.git
 ```
 
-Or download the ZIP from the [Releases page](https://github.com/durrante/Win32Forge/releases) and extract it.
+Or download the ZIP from the [Github Repo](https://github.com/durrante/Win32Forge/) and extract it.
 
 ---
 
