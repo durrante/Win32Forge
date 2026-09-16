@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **Selecting x64 + arm64 (or x86 + arm64) no longer fails the upload.** The GUI builds a combined
+  architecture value (`x64arm64` / `x86arm64`), but the IntuneWin32App module's `ValidateSet` only
+  accepted `x64`, `x86`, `arm64`, `x64x86` and `AllWithARM64`, so every affected app died with
+  *"Cannot validate argument on parameter 'Architecture'"*. A new module patch (**Patch F**) adds
+  both mixed combinations and their Graph values (`x64,arm64` and `x86,arm64`) — the Graph
+  `allowedArchitectures` property is a comma-separated flag list, so these were always valid; only
+  the module's lookup table was missing them.
+- **x86 + arm64 no longer silently becomes "all architectures".** The upload form previously mapped
+  that combination to `AllWithARM64`, quietly adding x64. The Template Editor had the opposite bug —
+  it dropped arm64 and saved plain `x86`.
+- **Added a fallback if the module patch can't be applied** (module not writable, future module
+  version). Instead of failing the upload, Win32Forge reads the `ValidateSet` the installed module
+  actually exposes and widens to the nearest supported superset, with a warning in the log.
+- **OneDrive "Files On-Demand" no longer breaks packaging.** `IntuneWinAppUtil.exe` cannot read a
+  dehydrated cloud placeholder and aborts mid-zip with
+  *"System.IO.IOException: The cloud operation is invalid"* (Win32 error 362). Win32Forge now
+  downloads any cloud-only files in the source folder before packaging, always against the real
+  path rather than through the long-path junction, which is where the recall is most likely to be
+  rejected. If the error still occurs, it retries once after a full read of every source file, and
+  failing that reports **which files** could not be read plus how to fix it — instead of the raw
+  .NET stack trace.
+- **OneDrive files with paths over 260 characters now download too.** With Windows long path
+  support off (`LongPathsEnabled=0`, the default), OneDrive rejects the on-read download for those
+  files. Win32Forge now temporarily marks them *Always keep on this device*, waits for OneDrive to
+  sync them, then clears the setting again (the files stay local for packaging).
+
+---
+
 ## [1.1.0] — 2026-06-19
 
 A reliability + bulk-workflow release. Adds folder-driven metadata, faster bulk

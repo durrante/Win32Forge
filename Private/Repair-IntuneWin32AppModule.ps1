@@ -27,6 +27,24 @@
       Patch B — Public\Test-AccessToken.ps1
           Same fix for the identical pattern in Test-AccessToken.
 
+      Patch C — Public\New-IntuneWin32AppRequirementRule.ps1
+          Adds W11_23H2 / W11_24H2 to the ValidateSet + $OperatingSystemTable.
+
+      Patch D — Private\Invoke-AzureStorageBlobUploadRenew.ps1
+          Removes the doubled "deviceAppManagement/" segment in the SAS renewal URI.
+
+      Patch E — Public\Add-IntuneWin32App.ps1
+          Category lookup by local match instead of an unreliable OData $filter.
+
+      Patch F — Public\New-IntuneWin32AppRequirementRule.ps1
+          Adds the mixed architecture combinations x64arm64 and x86arm64 to the
+          ValidateSet + $ArchitectureTable. The shipped module only offers
+          x64 / x86 / arm64 / x64x86 / AllWithARM64, so ticking x64 + arm64 in the
+          GUI produced "x64arm64", which failed parameter validation. Graph's
+          allowedArchitectures is a comma-separated flag list, so "x64,arm64" is
+          perfectly valid — only the module's table was missing it. The legacy
+          1.3.x rewrite (Patch 1) already includes these combos.
+
     Safe to call multiple times — skips any patch already applied.
     Returns $true if at least one patch was applied, $false if all were already up to date.
 #>
@@ -315,6 +333,64 @@ function Repair-IntuneWin32AppModule {
                     }
                 }
             }
+
+            # ══════════════════════════════════════════════════════════════════
+            # Patch F — New-IntuneWin32AppRequirementRule.ps1 (1.4+/1.5+)
+            #   The shipped ValidateSet offers only x64 / x86 / arm64 / x64x86 /
+            #   AllWithARM64, so a GUI selection of x64 + arm64 ("x64arm64") fails with
+            #   "Cannot validate argument on parameter 'Architecture'". Graph's
+            #   allowedArchitectures is a comma-separated flag list, so "x64,arm64" is
+            #   a valid value — only the module's lookup table was missing it.
+            #   Add the two mixed combinations to BOTH the ValidateSet and the table.
+            #   NOTE: re-reads the file because Patch C may have just rewritten it.
+            # ══════════════════════════════════════════════════════════════════
+            $archFileModern = Join-Path $moduleBase 'Public\New-IntuneWin32AppRequirementRule.ps1'
+            if (-not (Test-Path $archFileModern)) {
+                Write-Verbose "Repair-IntuneWin32AppModule: $archFileModern not found — skipping Patch F."
+            }
+            else {
+                $archContent = Get-Content $archFileModern -Raw
+                if ($archContent -match 'x64arm64') {
+                    Write-Verbose 'Repair-IntuneWin32AppModule: Patch F already applied (x64arm64 present).'
+                }
+                else {
+                    $patchedArch = $archContent
+
+                    # 1) Extend the ValidateSet. Matching "x64x86" immediately followed by a
+                    #    comma and "AllWithARM64" is unique to the ValidateSet — the hashtable
+                    #    entry below has ' = "x64,x86"' between the two names, never a comma.
+                    $patchedArch = $patchedArch -replace
+                        '"x64x86"(\s*,\s*)"AllWithARM64"',
+                        '"x64x86"$1"x64arm64"$1"x86arm64"$1"AllWithARM64"'
+
+                    # 2) Add the two API-value mappings after the x64x86 table entry,
+                    #    preserving the original line's indentation (captured as $1).
+                    $patchedArch = [regex]::Replace(
+                        $patchedArch,
+                        '(?m)^(\s*)"x64x86"\s*=\s*"x64,x86".*$',
+                        '$1"x64x86" = "x64,x86"' + "`r`n" +
+                        '$1"x64arm64" = "x64,arm64"' + "`r`n" +
+                        '$1"x86arm64" = "x86,arm64"'
+                    )
+
+                    if (($patchedArch -ne $archContent) -and
+                        ($patchedArch -match '"x64arm64"\s*,\s*"x86arm64"') -and
+                        ($patchedArch -match '"x64arm64"\s*=\s*"x64,arm64"') -and
+                        ($patchedArch -match '"x86arm64"\s*=\s*"x86,arm64"')) {
+                        try {
+                            Set-Content -Path $archFileModern -Value $patchedArch -Encoding UTF8 -Force
+                            Write-Verbose "Repair-IntuneWin32AppModule: Patch F applied to $archFileModern"
+                            $anyPatched = $true
+                        }
+                        catch {
+                            Write-Warning "Repair-IntuneWin32AppModule: could not write Patch F — $_"
+                        }
+                    }
+                    else {
+                        Write-Verbose 'Repair-IntuneWin32AppModule: Patch F targets not found (ValidateSet/table format changed) — skipping.'
+                    }
+                }
+            }
         }
         else {
             # ══════════════════════════════════════════════════════════════════
@@ -328,9 +404,12 @@ function Repair-IntuneWin32AppModule {
             }
             else {
                 $reqContent = Get-Content $requirementRuleFile -Raw
+                # NOTE: the x86arm64 test is deliberately the newest marker — an older
+                # Win32Forge already rewrote this file with x64arm64 but without x86arm64,
+                # and that copy still needs refreshing.
                 $alreadyPatched1 = ($reqContent -match 'W11_23H2' -and
                                     $reqContent -notmatch 'W11_25H2' -and
-                                    $reqContent -match 'x64arm64')
+                                    $reqContent -match 'x86arm64')
                 if ($alreadyPatched1) {
                     Write-Verbose 'Repair-IntuneWin32AppModule: Patch 1 already applied.'
                 }
@@ -347,7 +426,7 @@ function New-IntuneWin32AppRequirementRule {
 
     .PARAMETER Architecture
         Specify the architecture as a requirement for the Win32 app.
-        Supported values: x64, x86, arm64, x64x86, AllWithARM64.
+        Supported values: x64, x86, arm64, x64x86, x64arm64, x86arm64, AllWithARM64.
 
     .PARAMETER MinimumSupportedWindowsRelease
         Specify the minimum supported Windows release version as a requirement for the Win32 app.
@@ -380,7 +459,7 @@ function New-IntuneWin32AppRequirementRule {
     param(
         [parameter(Mandatory = $true, HelpMessage = "Specify the architecture as a requirement for the Win32 app.")]
         [ValidateNotNullOrEmpty()]
-        [ValidateSet("x64", "x86", "arm64", "x64x86", "x64arm64", "AllWithARM64")]
+        [ValidateSet("x64", "x86", "arm64", "x64x86", "x64arm64", "x86arm64", "AllWithARM64")]
         [string]$Architecture,
 
         [parameter(Mandatory = $true, HelpMessage = "Specify the minimum supported Windows release version as a requirement for the Win32 app.")]
@@ -414,6 +493,7 @@ function New-IntuneWin32AppRequirementRule {
             "arm64"        = "arm64"
             "x64x86"       = "x64,x86"
             "x64arm64"     = "x64,arm64"
+            "x86arm64"     = "x86,arm64"
             "AllWithARM64" = "x64,x86,arm64"
         }
 

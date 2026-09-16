@@ -1212,9 +1212,9 @@ function Show-AppUploadForm {
         $arm  = [bool]$chkArchArm64.IsChecked
         if ($x64 -and $x86 -and $arm) { return 'AllWithARM64' }
         if ($x64 -and $arm)            { return 'x64arm64' }
-        if ($x86 -and $arm)            { return 'AllWithARM64' }  # no x86+arm64 only option
-        if ($arm)                      { return 'arm64' }
+        if ($x86 -and $arm)            { return 'x86arm64' }
         if ($x64 -and $x86)            { return 'x64x86' }
+        if ($arm)                      { return 'arm64' }
         if ($x64)                      { return 'x64' }
         if ($x86)                      { return 'x86' }
         return 'x64'
@@ -1381,8 +1381,8 @@ function Show-AppUploadForm {
             if ($t.Architecture) {
                 $a = [string]$t.Architecture
                 $chkArchX64.IsChecked   = $a -in @('x64',  'x64x86', 'x64arm64', 'AllWithARM64')
-                $chkArchX86.IsChecked   = $a -in @('x86',  'x64x86', 'AllWithARM64')
-                $chkArchArm64.IsChecked = $a -in @('arm64','x64arm64','AllWithARM64')
+                $chkArchX86.IsChecked   = $a -in @('x86',  'x64x86', 'x86arm64', 'AllWithARM64')
+                $chkArchArm64.IsChecked = $a -in @('arm64','x64arm64','x86arm64','AllWithARM64')
                 Update-ArchLabel
             }
 
@@ -2133,8 +2133,8 @@ function Show-AppUploadForm {
         if ($p.Architecture) {
             $a = $p.Architecture
             $chkArchX64.IsChecked   = $a -in @('x64',  'x64x86', 'x64arm64', 'AllWithARM64')
-            $chkArchX86.IsChecked   = $a -in @('x86',  'x64x86', 'AllWithARM64')
-            $chkArchArm64.IsChecked = $a -in @('arm64','x64arm64','AllWithARM64')
+            $chkArchX86.IsChecked   = $a -in @('x86',  'x64x86', 'x86arm64', 'AllWithARM64')
+            $chkArchArm64.IsChecked = $a -in @('arm64','x64arm64','x86arm64','AllWithARM64')
             Update-ArchLabel
         }
 

@@ -1,6 +1,214 @@
 # Win32Forge v1.1.0  |  https://github.com/durrante/Win32Forge  |  MIT  |  Release history: CHANGELOG.md
 <#
 .SYNOPSIS
+    Forces OneDrive / Files On-Demand placeholders in a source tree to be downloaded locally.
+
+.DESCRIPTION
+    IntuneWinAppUtil.exe reads every source file with a plain FileStream. When a file is a
+    dehydrated cloud placeholder (OneDrive "Files On-Demand"), that read goes through the cloud
+    filter driver, and when the driver rejects it the tool dies with an opaque fatal error:
+
+        System.IO.IOException: The cloud operation is invalid.
+           at System.IO.FileStream.ReadCore(...)
+           at ...ZipUtil.CreateEntryFromFile(...)
+        ERROR  File '<output>.intunewin' has failed to be generated
+
+    "The cloud operation is invalid" is Win32 error 362 (ERROR_CLOUD_FILE_INVALID_REQUEST).
+    It is far more likely when the source is reached through a reparse point — which is exactly
+    what the MAX_PATH junction workaround below creates — because the placeholder is then being
+    recalled through a path the sync engine did not hand out.
+
+    The fix is to hydrate the files BEFORE packaging, always against the real source path, never
+    through the junction. Reading a single byte from a placeholder makes OneDrive download the
+    whole file; the attributes are re-checked afterwards and anything still dehydrated is read in
+    full as a fallback.
+
+.PARAMETER SourceFolder
+    The real source folder (NOT a junction to it).
+
+.PARAMETER Force
+    Read every file in full rather than only the ones flagged as placeholders. Used as a retry
+    after IntuneWinAppUtil.exe has already failed with a cloud error, both to catch files whose
+    attributes lie and to identify exactly which file cannot be read.
+
+.OUTPUTS
+    PSCustomObject with Checked, Hydrated, Failed (int) and FailedFiles (string[]).
+#>
+function Invoke-SourceHydration {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$SourceFolder,
+
+        [switch]$Force
+    )
+
+    # FILE_ATTRIBUTE_OFFLINE 0x1000 | RECALL_ON_OPEN 0x40000 | RECALL_ON_DATA_ACCESS 0x400000.
+    # [System.IO.FileAttributes] only names Offline, so compare the raw bits.
+    $placeholderMask = 0x00441000
+
+    $checked     = 0
+    $hydrated    = 0
+    $failedFiles = [System.Collections.Generic.List[string]]::new()
+    $pinQueue    = [System.Collections.Generic.List[object]]::new()
+    $cloudErrorPattern = 'cloud operation is invalid|cloud file provider|cloud operation was not completed'
+
+    try {
+        $enumOpts = [System.IO.EnumerationOptions]::new()
+        $enumOpts.RecurseSubdirectories = $true
+        $enumOpts.IgnoreInaccessible    = $true
+        # Default is Hidden|System — those files still go into the package, so scan them too.
+        $enumOpts.AttributesToSkip      = [System.IO.FileAttributes]0
+
+        $files = ([System.IO.DirectoryInfo]::new($SourceFolder)).EnumerateFiles('*', $enumOpts)
+    }
+    catch {
+        Write-ToolLog "Cloud-placeholder scan could not enumerate '$SourceFolder' — $($_.Exception.Message)" -Level WARN
+        return [pscustomobject]@{ Checked = 0; Hydrated = 0; Failed = 0; FailedFiles = @() }
+    }
+
+    $announced = $false
+
+    # EnumerateFiles is lazy — a missing/disappearing root or an unreadable directory throws on
+    # MoveNext, i.e. from inside this foreach rather than from the call above. Wrap the whole loop
+    # so hydration degrades to "partial scan + warning" instead of aborting the package run.
+    try {
+        foreach ($file in $files) {
+            $checked++
+
+            $isPlaceholder = ([int]$file.Attributes -band $placeholderMask) -ne 0
+            if (-not $isPlaceholder -and -not $Force) { continue }
+
+            if (-not $announced) {
+                $what = if ($Force) { 'Verifying every source file is readable' } else { 'Downloading cloud-only (OneDrive) files' }
+                Write-Host "  [*] $what — this can take a while on a large package..." -ForegroundColor Yellow
+                Write-ToolLog "Cloud hydration pass started (Force=$([bool]$Force)) on '$SourceFolder'"
+                $announced = $true
+            }
+
+            try {
+                # Reading one byte is enough to make the sync engine recall the whole file.
+                $fs = [System.IO.File]::Open($file.FullName, [System.IO.FileMode]::Open,
+                                             [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                try {
+                    if ($fs.Length -gt 0) {
+                        $probe = [byte[]]::new(1)
+                        $null  = $fs.Read($probe, 0, 1)
+
+                        # Some providers only recall the range that was touched. If the file still
+                        # reports as a placeholder, stream the rest to force a full hydration.
+                        $stillPlaceholder = ([int][System.IO.File]::GetAttributes($file.FullName) -band $placeholderMask) -ne 0
+                        if ($Force -or $stillPlaceholder) {
+                            $fs.Position = 0
+                            $fs.CopyTo([System.IO.Stream]::Null)
+                        }
+                    }
+                }
+                finally { $fs.Dispose() }
+
+                if ($isPlaceholder) { $hydrated++ }
+            }
+            catch {
+                if ("$($_.Exception.Message)" -match $cloudErrorPattern) {
+                    # Recall-on-read was rejected — queue for the pin fallback below.
+                    $pinQueue.Add([pscustomobject]@{ File = $file; Error = $_.Exception.Message })
+                }
+                else {
+                    $failedFiles.Add("$($file.FullName) — $($_.Exception.Message)")
+                    Write-ToolLog "Could not hydrate/read '$($file.FullName)' — $($_.Exception.Message)" -Level WARN
+                }
+            }
+        }
+    }
+    catch {
+        Write-ToolLog "Cloud-placeholder scan stopped early after $checked file(s) in '$SourceFolder' — $($_.Exception.Message)" -Level WARN
+    }
+
+    # Pin fallback. With LongPathsEnabled=0, OneDrive rejects an on-read recall for any path over
+    # 260 chars ("The cloud operation is invalid"), even via a \\?\ prefix. Setting the Pinned
+    # attribute ("Always keep on this device") makes the sync engine download the file through its
+    # own background path instead, which does work. Pin, wait for the download, then clear the pin
+    # again — clearing Pinned (without setting Unpinned) leaves the file local, so it stays readable
+    # for packaging while the user's OneDrive settings end up as they were.
+    if ($pinQueue.Count -gt 0) {
+        $pinnedBit   = 0x00080000   # FILE_ATTRIBUTE_PINNED
+        $unpinnedBit = 0x00100000   # FILE_ATTRIBUTE_UNPINNED
+        Write-Host "  [*] OneDrive refused $($pinQueue.Count) direct download$(if ($pinQueue.Count -ne 1) { 's' }) (usually paths over 260 chars) — asking OneDrive to sync them instead..." -ForegroundColor Yellow
+        Write-ToolLog "Pin fallback for $($pinQueue.Count) file(s) whose on-read recall was rejected"
+
+        $pending = [System.Collections.Generic.List[object]]::new()
+        $totalBytes = 0
+        foreach ($item in $pinQueue) {
+            $path = $item.File.FullName
+            try {
+                $orig = [int][System.IO.File]::GetAttributes($path)
+                $item | Add-Member -NotePropertyName WasPinned -NotePropertyValue (($orig -band $pinnedBit) -ne 0)
+                $new  = ($orig -bor $pinnedBit) -band (-bnot $unpinnedBit)
+                # [Enum]::ToObject — a plain cast rejects the Pinned bit, which has no enum member.
+                [System.IO.File]::SetAttributes($path, [Enum]::ToObject([System.IO.FileAttributes], $new))
+                $pending.Add($item)
+                $totalBytes += $item.File.Length
+            }
+            catch {
+                $failedFiles.Add("$path — $($item.Error) (pin fallback also failed: $($_.Exception.Message))")
+                Write-ToolLog "Could not pin '$path' — $($_.Exception.Message)" -Level WARN
+            }
+        }
+
+        # Allow a generous base plus time proportional to the download size (~1 s per MB).
+        $deadline = (Get-Date).AddSeconds(90 + [math]::Ceiling($totalBytes / 1MB))
+        $waiting  = @($pending)
+        while ($waiting.Count -gt 0 -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 1500
+            $waiting = @($waiting | Where-Object {
+                try { ([int][System.IO.File]::GetAttributes($_.File.FullName) -band $placeholderMask) -ne 0 } catch { $true }
+            })
+        }
+
+        $waitingPaths = [System.Collections.Generic.HashSet[string]]::new([string[]]@($waiting | ForEach-Object { $_.File.FullName }), [System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($item in $pending) {
+            $path = $item.File.FullName
+            $stillPlaceholder = $waitingPaths.Contains($path)
+            if ($stillPlaceholder) {
+                $failedFiles.Add("$path — $($item.Error) (OneDrive did not finish downloading it after pinning)")
+                Write-ToolLog "Pin fallback timed out for '$path'" -Level WARN
+            }
+            else {
+                $hydrated++
+                Write-ToolLog "Pin fallback downloaded '$path'" -Level DEBUG
+            }
+            # Restore the user's pin state (only if we changed it). Never set Unpinned — that would
+            # dehydrate the file again before IntuneWinAppUtil.exe gets to read it.
+            if (-not $item.WasPinned) {
+                try {
+                    $cur = [int][System.IO.File]::GetAttributes($path)
+                    [System.IO.File]::SetAttributes($path, [Enum]::ToObject([System.IO.FileAttributes], ($cur -band (-bnot $pinnedBit))))
+                }
+                catch { Write-ToolLog "Could not restore pin state on '$path' — $($_.Exception.Message)" -Level WARN }
+            }
+        }
+    }
+
+    if ($hydrated -gt 0) {
+        Write-Host "  [OK] $hydrated cloud-only file$(if ($hydrated -ne 1) { 's' }) downloaded locally." -ForegroundColor Green
+    }
+    if ($announced -or $hydrated -gt 0) {
+        Write-ToolLog "Cloud hydration pass finished: checked=$checked hydrated=$hydrated failed=$($failedFiles.Count)"
+    }
+    else {
+        Write-ToolLog "Cloud hydration pass: no placeholders among $checked file(s) in '$SourceFolder'." -Level DEBUG
+    }
+
+    return [pscustomobject]@{
+        Checked     = $checked
+        Hydrated    = $hydrated
+        Failed      = $failedFiles.Count
+        FailedFiles = $failedFiles.ToArray()
+    }
+}
+
+<#
+.SYNOPSIS
     Creates a .intunewin package from a source folder using IntuneWinAppUtil.exe.
 
 .DESCRIPTION
@@ -91,35 +299,74 @@ function New-IntunePackage {
         return [pscustomobject]@{ ExitCode = $p.ExitCode; Stdout = $o.Result.Trim(); Stderr = $e.Result.Trim() }
     }
 
-    $result = Invoke-PackageExe -Source $SourceFolder
+    # Pre-emptively pull down any OneDrive placeholders. IntuneWinAppUtil.exe cannot read a
+    # dehydrated file and dies with an unrecoverable "The cloud operation is invalid" mid-zip,
+    # so this has to happen before the first attempt — and against the real path, because the
+    # junction fallback below makes recall through a reparse point even more likely to fail.
+    $hydration = Invoke-SourceHydration -SourceFolder $SourceFolder
+    if ($hydration.Failed -gt 0) {
+        Write-Host "  [!] $($hydration.Failed) source file$(if ($hydration.Failed -ne 1) { 's' }) could not be read — packaging may fail." -ForegroundColor Yellow
+    }
 
-    # IntuneWinAppUtil.exe is a .NET Framework tool with the classic 260-char MAX_PATH limit.
-    # A deep source tree (e.g. a PSADT payload under a long OneDrive path) can exceed it and fail
-    # with "DirectoryNotFoundException: Could not find a part of the path". When we see that
-    # signature, retry once via a short directory junction so the paths the tool opens are short.
-    $looksLikeLongPath = ($result.ExitCode -ne 0) -and
-        (("$($result.Stdout)`n$($result.Stderr)") -match 'Could not find a part of the path|DirectoryNotFoundException|PathTooLong|filename or extension is too long')
-    if ($looksLikeLongPath) {
-        $junctionRoot = Join-Path $env:SystemDrive 'W32F'
-        $junction     = Join-Path $junctionRoot ([guid]::NewGuid().ToString('N').Substring(0, 8))
-        $madeJunction = $false
-        try {
-            New-Item -ItemType Directory -Path $junctionRoot -Force -ErrorAction Stop | Out-Null
-            New-Item -ItemType Junction -Path $junction -Target $SourceFolder -ErrorAction Stop | Out-Null
-            $madeJunction = $true
-            Write-Host "  [!] Source path exceeds the 260-char limit — retrying via short path ($junction)..." -ForegroundColor Yellow
-            Write-ToolLog "Long-path failure detected; retrying package via junction '$junction' -> '$SourceFolder'" -Level WARN
-            $result = Invoke-PackageExe -Source $junction
-        }
-        catch {
-            Write-ToolLog "Could not create short-path junction for retry — $($_.Exception.Message)" -Level ERROR
-        }
-        finally {
-            # IMPORTANT: delete the reparse point only (non-recursive) so the real source is untouched.
-            if ($madeJunction) {
-                try { [System.IO.Directory]::Delete($junction, $false) }
-                catch { Write-ToolLog "Could not remove junction '$junction' — $($_.Exception.Message)" -Level WARN }
+    # Signatures that identify the two known IntuneWinAppUtil.exe failure modes.
+    $longPathSignature = 'Could not find a part of the path|DirectoryNotFoundException|PathTooLong|filename or extension is too long'
+    $cloudSignature    = 'The cloud operation is invalid|cloud file provider|ERROR_CLOUD_FILE|CloudFile|cloud operation was not completed'
+
+    $activeSource = $SourceFolder
+    $junction     = $null
+    $madeJunction = $false
+
+    try {
+        $result = Invoke-PackageExe -Source $activeSource
+
+        # IntuneWinAppUtil.exe is a .NET Framework tool with the classic 260-char MAX_PATH limit.
+        # A deep source tree (e.g. a PSADT payload under a long OneDrive path) can exceed it and fail
+        # with "DirectoryNotFoundException: Could not find a part of the path". When we see that
+        # signature, retry once via a short directory junction so the paths the tool opens are short.
+        $looksLikeLongPath = ($result.ExitCode -ne 0) -and
+            (("$($result.Stdout)`n$($result.Stderr)") -match $longPathSignature)
+        if ($looksLikeLongPath) {
+            $junctionRoot = Join-Path $env:SystemDrive 'W32F'
+            $junction     = Join-Path $junctionRoot ([guid]::NewGuid().ToString('N').Substring(0, 8))
+            try {
+                New-Item -ItemType Directory -Path $junctionRoot -Force -ErrorAction Stop | Out-Null
+                New-Item -ItemType Junction -Path $junction -Target $SourceFolder -ErrorAction Stop | Out-Null
+                $madeJunction = $true
+                $activeSource = $junction
+                Write-Host "  [!] Source path exceeds the 260-char limit — retrying via short path ($junction)..." -ForegroundColor Yellow
+                Write-ToolLog "Long-path failure detected; retrying package via junction '$junction' -> '$SourceFolder'" -Level WARN
+                $result = Invoke-PackageExe -Source $activeSource
             }
+            catch {
+                Write-ToolLog "Could not create short-path junction for retry — $($_.Exception.Message)" -Level ERROR
+            }
+        }
+
+        # A cloud error means a placeholder slipped past the pre-emptive pass — either its
+        # attributes were stale, or it was only partially recalled. Read every file in full and
+        # retry once. The hydration always runs against the REAL source, never the junction.
+        $looksLikeCloud = ($result.ExitCode -ne 0) -and
+            (("$($result.Stdout)`n$($result.Stderr)") -match $cloudSignature)
+        if ($looksLikeCloud) {
+            Write-Host '  [!] OneDrive blocked a file read — forcing a full download of the source, then retrying...' -ForegroundColor Yellow
+            Write-ToolLog "Cloud-file failure detected; forcing full hydration of '$SourceFolder' before retry" -Level WARN
+
+            $forced = Invoke-SourceHydration -SourceFolder $SourceFolder -Force
+            if ($forced.Failed -gt 0) {
+                # Name the offending files — IntuneWinAppUtil.exe never says which file it choked on.
+                foreach ($f in $forced.FailedFiles) { Write-ToolLog "  unreadable: $f" -Level ERROR }
+                $sample = ($forced.FailedFiles | Select-Object -First 3) -join '; '
+                throw "$($forced.Failed) file(s) in the source folder cannot be read because OneDrive will not make them available offline. Right-click the source folder in Explorer and choose 'Always keep on this device', wait for the sync to finish, then try again. If the paths are over 260 characters, enabling Windows long path support (LongPathsEnabled) or moving the folder to a shorter path also fixes this. First failures: $sample"
+            }
+
+            $result = Invoke-PackageExe -Source $activeSource
+        }
+    }
+    finally {
+        # IMPORTANT: delete the reparse point only (non-recursive) so the real source is untouched.
+        if ($madeJunction) {
+            try { [System.IO.Directory]::Delete($junction, $false) }
+            catch { Write-ToolLog "Could not remove junction '$junction' — $($_.Exception.Message)" -Level WARN }
         }
     }
 
@@ -129,6 +376,12 @@ function New-IntunePackage {
 
     if ($result.ExitCode -ne 0) {
         $errText = if ($result.Stderr) { $result.Stderr } else { $result.Stdout }
+
+        # Give the cloud failure an actionable message instead of the raw .NET stack trace.
+        if (("$($result.Stdout)`n$($result.Stderr)") -match $cloudSignature) {
+            throw "IntuneWinAppUtil.exe could not read the source files because OneDrive refused to make them available offline (`"The cloud operation is invalid`"). Right-click '$SourceFolder' in Explorer and choose 'Always keep on this device', wait for the sync to complete, then try again (for paths over 260 characters, enabling Windows long path support also fixes this). Full output: $errText"
+        }
+
         throw "IntuneWinAppUtil.exe failed (exit $($result.ExitCode))$(if ($errText) {": $errText"})"
     }
 

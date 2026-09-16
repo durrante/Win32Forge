@@ -690,6 +690,7 @@ function Show-TemplateEditor {
         $arm = $chkArchArm.IsChecked
         if ($x64 -and $x86 -and $arm) { return 'AllWithARM64' }
         if ($x64 -and $arm)           { return 'x64arm64'     }
+        if ($x86 -and $arm)           { return 'x86arm64'     }
         if ($x64 -and $x86)           { return 'x64x86'       }
         if ($x64)                     { return 'x64'           }
         if ($x86)                     { return 'x86'           }
@@ -700,8 +701,8 @@ function Show-TemplateEditor {
     function Set-ArchValue {
         param([string]$val)
         $chkArch64.IsChecked  = $val -in @('x64','x64x86','x64arm64','AllWithARM64') -or (-not $val)
-        $chkArch32.IsChecked  = $val -in @('x86','x64x86','AllWithARM64')
-        $chkArchArm.IsChecked = $val -in @('arm64','x64arm64','AllWithARM64')
+        $chkArch32.IsChecked  = $val -in @('x86','x64x86','x86arm64','AllWithARM64')
+        $chkArchArm.IsChecked = $val -in @('arm64','x64arm64','x86arm64','AllWithARM64')
     }
 
     #endregion

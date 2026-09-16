@@ -23,6 +23,78 @@
                                FilterID, FilterIntent }
 #>
 
+<#
+.SYNOPSIS
+    Maps an architecture value onto something the installed module will actually accept.
+
+.DESCRIPTION
+    Win32Forge offers every architecture combination Graph's allowedArchitectures flag list
+    supports, including the mixed x64arm64 / x86arm64 pairs. The IntuneWin32App module ships
+    with a narrower ValidateSet; Repair-IntuneWin32AppModule (Patch F / Patch 1) widens it on
+    every launch, but that patch can legitimately fail to apply — e.g. the module is installed
+    under Program Files and the file isn't writable, or a future module version changed shape.
+
+    Rather than let parameter validation abort the upload, read the ValidateSet the installed
+    module actually exposes and degrade to the nearest supported SUPERSET. Widening means the
+    app is offered to one extra architecture; narrowing would silently drop an architecture the
+    user explicitly ticked, which is the worse failure.
+
+    Returns the original value untouched (and logs nothing) when it is already supported.
+#>
+function Resolve-SupportedArchitecture {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Architecture
+    )
+
+    # Preference order per requested value: the value itself first, then supersets.
+    $fallbackChain = @{
+        'x64'          = @('x64')
+        'x86'          = @('x86', 'x64x86')
+        'arm64'        = @('arm64', 'AllWithARM64')
+        'x64x86'       = @('x64x86', 'AllWithARM64')
+        'x64arm64'     = @('x64arm64', 'AllWithARM64')
+        'x86arm64'     = @('x86arm64', 'AllWithARM64')
+        'AllWithARM64' = @('AllWithARM64', 'x64x86')
+    }
+
+    $validValues = $null
+    try {
+        $cmd  = Get-Command -Name 'New-IntuneWin32AppRequirementRule' -ErrorAction Stop
+        $attr = $cmd.Parameters['Architecture'].Attributes |
+                Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } |
+                Select-Object -First 1
+        if ($attr) { $validValues = @($attr.ValidValues) }
+    }
+    catch {
+        Write-ToolLog "Could not read the module's Architecture ValidateSet — passing '$Architecture' through unchanged. $($_.Exception.Message)" -Level DEBUG
+    }
+
+    # No ValidateSet found (or the lookup failed) — don't second-guess the module.
+    if (-not $validValues -or $validValues.Count -eq 0) { return $Architecture }
+
+    if ($validValues -contains $Architecture) { return $Architecture }
+
+    $chain = $fallbackChain[$Architecture]
+    if ($chain) {
+        foreach ($candidate in $chain) {
+            if ($validValues -contains $candidate) {
+                Write-Warning "Architecture '$Architecture' is not supported by the installed IntuneWin32App module — using '$candidate' instead. Run Win32Forge as a user who can write to the module folder so the architecture patch can be applied."
+                Write-ToolLog "Architecture '$Architecture' unsupported by module (ValidateSet: $($validValues -join ', ')) — falling back to '$candidate'. Module patch F likely failed to apply." -Level WARN
+                return $candidate
+            }
+        }
+    }
+
+    # Unknown value with no usable superset — last resort so the upload still completes.
+    $last = if ($validValues -contains 'x64') { 'x64' } else { $validValues[0] }
+    Write-Warning "Architecture '$Architecture' is not supported by the installed IntuneWin32App module and has no supported superset — using '$last'."
+    Write-ToolLog "Architecture '$Architecture' unsupported and unmapped (ValidateSet: $($validValues -join ', ')) — falling back to '$last'." -Level WARN
+    return $last
+}
+
 function Add-IntuneApplication {
     [CmdletBinding()]
     param(
@@ -134,6 +206,14 @@ function Add-IntuneApplication {
 
     $arch  = $AppConfig.Architecture                   ?? (Get-TplVal 'Architecture' 'x64')
     $minOS = $AppConfig.MinimumSupportedWindowsRelease ?? (Get-TplVal 'MinimumSupportedWindowsRelease' 'W10_2004')
+
+    # Safety net: the mixed-architecture combinations (x64arm64 / x86arm64) only exist in the
+    # module once Repair-IntuneWin32AppModule has patched it. If the patch could not be written
+    # (module installed for all users, file locked, module upgraded to a newer shape), the
+    # ValidateSet would reject the value and the whole upload would fail. Widen to the nearest
+    # supported superset instead — that preserves the architectures the user actually ticked
+    # and only adds one they didn't, which is far better than dropping arm64 silently.
+    $arch = Resolve-SupportedArchitecture -Architecture $arch
 
     $requirementRule = New-IntuneWin32AppRequirementRule `
         -Architecture                   $arch `
